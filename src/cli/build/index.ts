@@ -11,8 +11,9 @@ async function buildCli(): Promise<void> {
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "toy-box-build-"));
   const appTypeLibrary = join(temporaryDirectory, "app-type-library");
   const screenNative = join(temporaryDirectory, SCREEN_NATIVE_DIRECTORY);
-  // Screens' native helper exists only for macOS, so other platforms ship without it.
-  const includesScreens = process.platform === "darwin";
+  // Screens ships with native helpers on macOS and Linux/XWayland.
+  const includesScreens =
+    (process.platform === "darwin" && process.arch === "arm64") || process.platform === "linux";
 
   try {
     await writeAppTypeLibrary(projectRoot, appTypeLibrary);

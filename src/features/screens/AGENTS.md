@@ -7,9 +7,10 @@ Closing a pane never quits the source application.
 
 `model/` holds what the browser and server share: screens and their statuses,
 frames, input and the socket protocol. `server/` owns the runtime, the native
-helper process and the agent tool, and `native/` is the macOS helper itself.
-macOS is the only platform with a helper, so only macOS builds embed it, and on
-any other platform starting the helper refuses with the macOS requirement.
+helper process and the agent tool, and `native/` contains the macOS and Linux
+helpers. Linux support targets XWayland windows in WSLg only: it does not list
+displays or capture Wayland-native apps. Building the Linux helper requires
+`gcc`, `pkg-config`, `libx11-dev`, `libxtst-dev` and `libjpeg-dev`.
 `client/` holds the pane, the hover preview, the screen browser and the hooks
 behind them. `bench/` measures delivery.
 
@@ -30,9 +31,9 @@ living inside the one before it:
   helper releases held input and exits. If the helper fails, its captures end and
   the next use starts another. In development, starting it first compiles the
   source if it changed since the last build.
-- A **capture** is one ScreenCaptureKit stream for one screen, shared by everyone
-  viewing it. Its first viewer opens it, resolving the screen's ID anew, and its
-  last viewer stops it on leaving. It ends early when its display or window goes
+- A **capture** is one native stream for one screen, shared by everyone viewing
+  it. Its first viewer opens it, resolving the screen's ID anew, and its last
+  viewer stops it on leaving. It ends early when its display or window goes
   away.
 - A **viewer** is one socket, held by one visible canvas: a screen pane or the
   hover preview. It stays open while its pane is visible and the page is in the
@@ -104,6 +105,8 @@ Native code owns capture, geometry, JPEG encoding and OS input. The runtime owns
 captures, delivery and control. The browser paints frames and acknowledges them
 after drawing. The binary embeds the helper as one executable and extracts it once
 per version, by content hash; permissions belong to the app launching Toy Box.
+Linux sends non-ASCII text by temporarily mapping an unused X11 keycode and
+restoring its prior mapping after the text action.
 The server ends the helper by closing its stdin, so it answers what it was sent and
 releases held input before exiting; its open pipes would otherwise keep the server
 running. It ignores a terminal's Ctrl+C, which reaches the server's whole process
