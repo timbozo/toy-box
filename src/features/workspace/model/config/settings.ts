@@ -12,6 +12,8 @@ export const settingsSchema = z.object({
   autoFocusArtifacts: z.enum(["always", "sessions", "automations", "never"]),
   disabledProviders: z.array(z.string()),
   pinnedSessionIds: z.array(z.string()),
+  /** Sessions kept with their history but left out of the session list. */
+  archivedSessionIds: z.array(z.string()),
   hyperSessionId: z.string().nullable(),
   /** This server's name for its clients and peers. Empty means the computer's name. */
   serverName: z.string().trim().max(64),
@@ -31,6 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoFocusArtifacts: "automations",
   disabledProviders: ["claude"],
   pinnedSessionIds: [],
+  archivedSessionIds: [],
   hyperSessionId: null,
   serverName: "",
   serverId: "",
@@ -49,6 +52,7 @@ export function normalizeSettings(value: unknown): Settings {
     }),
   ) as Settings;
   settings.pinnedSessionIds = [...new Set(settings.pinnedSessionIds)].sort();
+  settings.archivedSessionIds = [...new Set(settings.archivedSessionIds)].sort();
   settings.disabledProviders = [...new Set(settings.disabledProviders)].sort();
   return settings;
 }
@@ -57,6 +61,7 @@ export function normalizeSettings(value: unknown): Settings {
 export const CATALOG_SETTINGS: readonly (keyof Settings)[] = [
   "disabledProviders",
   "pinnedSessionIds",
+  "archivedSessionIds",
 ];
 
 export function areSettingsEqual(left: Settings, right: Settings): boolean {
@@ -67,7 +72,7 @@ export function isSettingEqual(key: keyof Settings, left: Settings, right: Setti
   if (key === "defaultModel") {
     return areModelConfigurationsEqual(left.defaultModel, right.defaultModel);
   }
-  if (key === "pinnedSessionIds" || key === "disabledProviders") {
+  if (key === "pinnedSessionIds" || key === "archivedSessionIds" || key === "disabledProviders") {
     return shallow(new Set(left[key]), new Set(right[key]));
   }
   return Object.is(left[key], right[key]);

@@ -70,12 +70,15 @@ transition as a `session.*` workspace event. Browsers read it through `sessionQu
 and `useSessionActivity.ts`, and `sessionMutations.markRead` clears unread before the server confirms.
 
 `src/server/managedSessions.ts` at the application composition boundary selects the 250 most recent
-ordinary, unpinned sessions, plus all managed and pinned sessions. Drafts and sessions with shared
+ordinary sessions, plus all managed, pinned, and archived sessions. Drafts and sessions with shared
 activity are retained as well. This bounds browsing metadata without deleting history; old ordinary
 sessions outside the catalog do not reopen through a URL. Each read lists enough of every
 provider's newest sessions to cover that window, and `findSessions` reads retained sessions outside
 those listings by ID. The sidebar filters the retained catalog before displaying up to 50 ordinary
 matches, while keeping pins visible outside that display limit.
+An archived session is one whose ID is in the `archivedSessionIds` setting: it keeps its history and
+runtime, and the sidebar lists it only under "Show archived sessions", which lists nothing else.
+The session menu archives and unarchives, and agents archive through `archive_session`.
 Sessions with Worker children have a compact child-count badge and chevron beside the title.
 The badge is a separate disclosure button, collapsed by default.
 It occupies only the title line; the relative time and location keep their normal alignment.

@@ -1,5 +1,6 @@
 ## 📅 v0.4.10 (11/18/26)
 
+- Sessions can now be archived from their menu. An archived session leaves the session list but keeps its history; "Show archived sessions" in the sidebar filter lists them, and "Unarchive session" brings one back. Agents can archive a session with `archive_session`.
 - Channel requests now show attachments when the lead adds them.
 - Upgraded the GitHub Copilot SDK to use the new Microsoft Copilot SDK (your CLI setup remains the same)
 - File/artifact links in channel messages can now open the respective artifact on click

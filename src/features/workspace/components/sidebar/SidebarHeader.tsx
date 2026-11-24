@@ -29,7 +29,8 @@ export function SidebarHeader({
   sessionCount: number;
 }) {
   const { providers, hasModels } = useProviders();
-  const isFiltering = filter.hiddenProviders.length > 0 || !filter.showExternalSessions;
+  const isFiltering =
+    filter.hiddenProviders.length > 0 || !filter.showExternalSessions || filter.showArchived;
 
   return (
     <div
@@ -89,6 +90,12 @@ export function SidebarHeader({
               }
             >
               Show external sessions
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              checked={filter.showArchived}
+              onCheckedChange={(checked) => onFilterChange({ ...filter, showArchived: checked })}
+            >
+              Show archived sessions
             </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>

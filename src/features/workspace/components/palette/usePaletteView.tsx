@@ -92,6 +92,7 @@ export function usePaletteView(
   const activities = useSessionsActivity((activities) => activities);
   const workspace = useWorkspaceSelector(({ settings }) => ({
     pinnedIds: settings.pinnedSessionIds,
+    archivedIds: settings.archivedSessionIds,
     disabledProviders: settings.disabledProviders,
     useWorktree: settings.useWorktree,
   }));
@@ -358,7 +359,10 @@ export function usePaletteView(
       // Sessions past the cap fall through to the sections below.
       const listedIds = new Set(readyForYou.map(({ id }) => id));
       const triage = triageSessions(
-        sessions.filter(({ id }) => !listedIds.has(createSessionPane(id).id)),
+        sessions.filter(
+          ({ id }) =>
+            !listedIds.has(createSessionPane(id).id) && !workspace.archivedIds.includes(id),
+        ),
         {
           activities,
           pinnedIds: workspace.pinnedIds,
