@@ -23,7 +23,7 @@ describe("recent directories", () => {
       createSession("newer-repo", 3, " /repo "),
     ];
 
-    expect(getRecentDirectories(sessions)).toEqual([
+    expect(getRecentDirectories(sessions, [])).toEqual([
       { cwd: "/repo", repository: "owner/repo", gitRoot: "/repo" },
       { cwd: "/other", repository: undefined, gitRoot: undefined },
     ]);
@@ -39,7 +39,7 @@ describe("recent directories", () => {
       ),
     ];
 
-    const directories = getRecentDirectories(sessions);
+    const directories = getRecentDirectories(sessions, []);
 
     expect(directories).toHaveLength(48);
     expect(directories[0]?.cwd).toBe("/repo/50");
@@ -47,17 +47,32 @@ describe("recent directories", () => {
   });
 
   test("does not mix older repository metadata into a newer Git snapshot", () => {
-    const directories = getRecentDirectories([
-      {
-        ...createSession("newer", 2, "/repo"),
-        context: { directory: "/repo", gitRoot: "/repo" },
-      },
-      {
-        ...createSession("older", 1, "/repo"),
-        context: { directory: "/repo", gitRoot: "/repo", repository: "old/remote" },
-      },
-    ]);
+    const directories = getRecentDirectories(
+      [
+        {
+          ...createSession("newer", 2, "/repo"),
+          context: { directory: "/repo", gitRoot: "/repo" },
+        },
+        {
+          ...createSession("older", 1, "/repo"),
+          context: { directory: "/repo", gitRoot: "/repo", repository: "old/remote" },
+        },
+      ],
+      [],
+    );
 
     expect(directories).toEqual([{ cwd: "/repo", gitRoot: "/repo", repository: undefined }]);
+  });
+
+  test("leaves out directories that only archived sessions use", () => {
+    const sessions = [
+      createSession("archived", 3, "/finished"),
+      createSession("kept", 2, "/current"),
+      createSession("archived-shared", 1, "/current"),
+    ];
+
+    expect(getRecentDirectories(sessions, ["archived", "archived-shared"])).toEqual([
+      { cwd: "/current", repository: undefined, gitRoot: undefined },
+    ]);
   });
 });

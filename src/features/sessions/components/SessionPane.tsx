@@ -70,6 +70,9 @@ export function SessionPane({
   const [directorySelection, setDirectorySelection] = useState<string | null | undefined>(
     undefined,
   );
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
   // Subscribe only to this session's durable metadata.
   const { data: sessionRecord, isLoading: isSessionRecordLoading } = useQuery({
     ...sessionQueries.state,
@@ -80,7 +83,7 @@ export function SessionPane({
         session,
         recentDirectory:
           session && !session.provider && directorySelection === undefined
-            ? getRecentDirectories(state.sessions)[0]?.cwd
+            ? getRecentDirectories(state.sessions, archivedSessionIds)[0]?.cwd
             : undefined,
       };
     },

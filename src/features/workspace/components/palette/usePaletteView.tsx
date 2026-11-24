@@ -134,7 +134,7 @@ export function usePaletteView(
   const enabledAutomations = automations.filter((automation) =>
     isEnabled(automation.model.provider),
   );
-  const recentDirectories = getRecentDirectories(sessions);
+  const recentDirectories = getRecentDirectories(sessions, workspace.archivedIds);
 
   const model = launch.model ?? defaultModel ?? undefined;
   const modelKey = model && modelConfigurationKey(model);

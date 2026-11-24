@@ -14,6 +14,7 @@ import { ScrollableFade } from "@/shared/ui/scrollable-fade";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/utils";
 import { SessionLocationIcon } from "../SessionLocationIcon";
+import { useWorkspaceSelector } from "@workspace/hooks/state";
 import { getRecentDirectories, type RecentDirectory } from "../../../model/recentDirectories";
 import { resolveSessionLocation } from "../locationDisplay";
 import { useSessionContext } from "../useSessionContext";
@@ -230,9 +231,12 @@ function useRecentDirectories(): {
   recentDirectories: RecentDirectory[];
   isLoading: boolean;
 } {
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
   const { data, isLoading } = useQuery({
     ...sessionQueries.state,
-    select: (state) => getRecentDirectories(state.sessions),
+    select: (state) => getRecentDirectories(state.sessions, archivedSessionIds),
   });
 
   return {

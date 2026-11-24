@@ -8,10 +8,15 @@ export type RecentDirectory = {
   gitRoot?: string;
 };
 
-/** Returns unique working directories in most-recently-used order. */
-export function getRecentDirectories(sessions: Session[]): RecentDirectory[] {
+/** Returns the unique working directories of unarchived sessions in most-recently-used order. */
+export function getRecentDirectories(
+  sessions: Session[],
+  archivedSessionIds: readonly string[],
+): RecentDirectory[] {
   const directories = new Map<string, RecentDirectory>();
-  const recentSessions = [...sessions]
+  const archived = new Set(archivedSessionIds);
+  const recentSessions = sessions
+    .filter(({ id }) => !archived.has(id))
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
     .slice(0, RECENT_SESSION_LIMIT);
 
