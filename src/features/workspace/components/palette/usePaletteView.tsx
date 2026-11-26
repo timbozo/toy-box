@@ -33,7 +33,7 @@ import { sessionMutations } from "@sessions/mutations";
 import type { Session } from "@sessions/model";
 import { sessionAttention } from "@sessions/model/activity";
 import { createSessionPane } from "@sessions/model/panes";
-import { getRecentDirectories } from "@sessions/model/recentDirectories";
+import { getRecentDirectories, groupDirectoryChoices } from "@sessions/model/recentDirectories";
 import { selectSessionChildren, sessionQueries } from "@sessions/queries";
 import { useSessionsActivity } from "@sessions/useSessionActivity";
 import { useWorkspaceRoots } from "@workspace/hooks/layout/roots";
@@ -440,8 +440,12 @@ export function usePaletteView(
     }
 
     case "directory": {
-      const items = recentDirectories.map((recent) =>
-        directoryItem(recent, recent.cwd === directory),
+      const choices = groupDirectoryChoices(
+        recentDirectories,
+        channels.map((channel) => channel.directory),
+      );
+      const items = [...choices.channel, ...choices.recent].map((choice) =>
+        directoryItem(choice, choice.cwd === directory),
       );
       // As in the composer, whether new work gets its own worktree is chosen with its directory.
       const worktree: PaletteItem = {

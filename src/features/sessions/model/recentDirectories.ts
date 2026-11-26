@@ -8,7 +8,10 @@ export type RecentDirectory = {
   gitRoot?: string;
 };
 
-/** Returns the unique working directories of unarchived sessions in most-recently-used order. */
+/**
+ * Returns the unique working directories of unarchived sessions in most-recently-used order. A
+ * session's own worktree belongs to that session, so it is never offered to another.
+ */
 export function getRecentDirectories(
   sessions: Session[],
   archivedSessionIds: readonly string[],
@@ -16,7 +19,7 @@ export function getRecentDirectories(
   const directories = new Map<string, RecentDirectory>();
   const archived = new Set(archivedSessionIds);
   const recentSessions = sessions
-    .filter(({ id }) => !archived.has(id))
+    .filter(({ id, worktree }) => !archived.has(id) && !worktree)
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
     .slice(0, RECENT_SESSION_LIMIT);
 
@@ -33,4 +36,18 @@ export function getRecentDirectories(
   }
 
   return [...directories.values()];
+}
+
+/** Directories to offer for new work: each channel's directory, then the recent ones no channel uses. */
+export function groupDirectoryChoices(
+  recentDirectories: readonly RecentDirectory[],
+  channelDirectories: readonly (string | undefined)[],
+): { channel: RecentDirectory[]; recent: RecentDirectory[] } {
+  const channelCwds = new Set(channelDirectories.filter((cwd) => cwd !== undefined));
+  return {
+    channel: [...channelCwds].map(
+      (cwd) => recentDirectories.find((recent) => recent.cwd === cwd) ?? { cwd },
+    ),
+    recent: recentDirectories.filter(({ cwd }) => !channelCwds.has(cwd)),
+  };
 }

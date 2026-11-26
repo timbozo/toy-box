@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Session } from "./index";
-import { getRecentDirectories } from "./recentDirectories";
+import { getRecentDirectories, groupDirectoryChoices } from "./recentDirectories";
 
 function createSession(sessionId: string, updatedAt: number, directory?: string): Session {
   return {
@@ -74,5 +74,30 @@ describe("recent directories", () => {
     expect(getRecentDirectories(sessions, ["archived", "archived-shared"])).toEqual([
       { cwd: "/current", repository: undefined, gitRoot: undefined },
     ]);
+  });
+});
+
+test("leaves out a session's own worktree", () => {
+  const sessions = [
+    {
+      ...createSession("isolated", 2, "/worktrees/isolated"),
+      worktree: { path: "/worktrees/isolated", branch: "work", baseBranch: "main" },
+    },
+    createSession("plain", 1, "/repo"),
+  ];
+
+  expect(getRecentDirectories(sessions, [])).toEqual([
+    { cwd: "/repo", repository: undefined, gitRoot: undefined },
+  ]);
+});
+
+describe("directory choices", () => {
+  test("lists each channel directory once, ahead of the recent ones no channel uses", () => {
+    const repo = { cwd: "/repo", repository: "owner/repo", gitRoot: "/repo" };
+    const other = { cwd: "/other" };
+
+    expect(
+      groupDirectoryChoices([other, repo], ["/repo", undefined, "/unvisited", "/repo"]),
+    ).toEqual({ channel: [repo, { cwd: "/unvisited" }], recent: [other] });
   });
 });

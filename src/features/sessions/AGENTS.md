@@ -79,7 +79,8 @@ matches, while keeping pins visible outside that display limit.
 An archived session is one whose ID is in the `archivedSessionIds` setting: it keeps its history and
 runtime, and the sidebar lists it only under "Show archived sessions", which lists nothing else.
 The session menu archives and unarchives, and agents archive through `archive_session`.
-Archived sessions contribute nothing to the derived recent directories.
+Archived sessions and session worktrees contribute nothing to the derived recent directories, and
+the directory picker lists channel directories ahead of them.
 Sessions with Worker children have a compact child-count badge and chevron beside the title.
 The badge is a separate disclosure button, collapsed by default.
 It occupies only the title line; the relative time and location keep their normal alignment.
