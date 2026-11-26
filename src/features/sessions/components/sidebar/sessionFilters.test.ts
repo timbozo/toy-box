@@ -9,7 +9,7 @@ const session = (id: string, provider: string, modified: number): Session => ({
   createdAt: new Date(0),
   updatedAt: new Date(modified),
 });
-const filters = { showExternalSessions: true, hiddenProviders: [], query: "" };
+const filters = { showExternalSessions: true, showArchived: false, hiddenProviders: [], query: "" };
 
 test("provider and source filters compose without changing the catalog", () => {
   const sessions = [
@@ -74,4 +74,20 @@ test("text search finds older matches throughout the retained history before cli
   expect(filterSessionList(sessions, { ...filters, query: "older matching" })).toEqual([
     sessions[0]!,
   ]);
+});
+
+test("archived sessions are listed only on request, and then alone, pinned or not", () => {
+  const kept = session("kept", "copilot", 1);
+  const archived = session("archived", "copilot", 2);
+  const archivedPin = session("archived-pin", "copilot", 3);
+  const list = (showArchived: boolean) =>
+    filterSessionList(
+      [kept, archived, archivedPin],
+      { ...filters, showArchived },
+      [archivedPin.id],
+      [archived.id, archivedPin.id],
+    );
+
+  expect(list(false)).toEqual([kept]);
+  expect(list(true)).toEqual([archivedPin, archived]);
 });

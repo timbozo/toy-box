@@ -104,7 +104,7 @@ describe("session type resolution", () => {
 });
 
 describe("Session catalog projection", () => {
-  test("reserves 250 history slots independently of managed and pinned sessions", async () => {
+  test("reserves 250 history slots independently of managed, pinned, and archived sessions", async () => {
     const db = await openTestDatabase();
     const automation = await createAutomation({
       title: "Old automation",
@@ -123,10 +123,18 @@ describe("Session catalog projection", () => {
     await saveSettings({
       ...DEFAULT_SETTINGS,
       pinnedSessionIds: ["old-pin", "new-pin"],
+      archivedSessionIds: ["old-archived"],
       hyperSessionId: "old-hyper",
     });
     const history = Array.from({ length: 260 }, (_, i) => catalogSession(`history-${i}`, i + 1));
-    const required = [automation.id, "old-inbox", "old-hyper", "old-channel-member", "old-pin"];
+    const required = [
+      automation.id,
+      "old-inbox",
+      "old-hyper",
+      "old-channel-member",
+      "old-pin",
+      "old-archived",
+    ];
     const sessions = [
       ...required.map((id) => catalogSession(id, 0)),
       catalogSession("new-pin", 1000),

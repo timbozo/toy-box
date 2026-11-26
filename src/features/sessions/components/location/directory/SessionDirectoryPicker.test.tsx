@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_SETTINGS } from "@workspace/model/config/settings";
+import type { WorkspaceState } from "@workspace/model/state/reducer";
+import { workspaceQueries } from "@workspace/queries";
 import type { SessionContext, Session } from "../../../model";
 import { createEmptySessionsState, sessionQueries } from "../../../queries";
 import { SessionLocationPicker } from "../SessionLocationPicker";
@@ -23,6 +26,12 @@ function renderPicker(
   context?: SessionContext,
 ) {
   const queryClient = new QueryClient();
+  queryClient.setQueryData(workspaceQueries.state.queryKey, {
+    settings: DEFAULT_SETTINGS,
+    drafts: {},
+    environment: {} as WorkspaceState["environment"],
+    installedVersion: null,
+  } satisfies WorkspaceState);
   if (context) {
     queryClient.setQueryData(sessionQueries.context(context.directory).queryKey, context);
   }

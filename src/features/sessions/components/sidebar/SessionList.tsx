@@ -23,8 +23,12 @@ export function SessionList({ className, sessions, emptyMessage }: SessionListPr
     select: selectSessionChildren,
   });
   const pinnedSessionIds = useWorkspaceSelector((workspace) => workspace.settings.pinnedSessionIds);
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
   const updateSetting = useUpdateWorkspaceSetting();
   const pinnedSessionIdSet = new Set(pinnedSessionIds);
+  const archivedSessionIdSet = new Set(archivedSessionIds);
   const [now] = useState(() => new Date());
   const sessionGroups = groupSessions(sessions, pinnedSessionIds, now);
 
@@ -34,6 +38,15 @@ export function SessionList({ className, sessions, emptyMessage }: SessionListPr
       pinnedSessionIdSet.has(sessionId)
         ? pinnedSessionIds.filter((pinnedSessionId) => pinnedSessionId !== sessionId)
         : [...pinnedSessionIds, sessionId],
+    );
+  }
+
+  function handleSessionArchiveToggle(sessionId: string) {
+    updateSetting(
+      "archivedSessionIds",
+      archivedSessionIdSet.has(sessionId)
+        ? archivedSessionIds.filter((archivedSessionId) => archivedSessionId !== sessionId)
+        : [...archivedSessionIds, sessionId],
     );
   }
 
@@ -50,7 +63,9 @@ export function SessionList({ className, sessions, emptyMessage }: SessionListPr
         onSelect={handleSessionSelect}
         onPinToggle={isChild ? undefined : handleSessionPinToggle}
         isActive={isOpen(createSessionPane(session.id))}
+        onArchiveToggle={isChild ? undefined : handleSessionArchiveToggle}
         isPinned={!isChild && pinnedSessionIdSet.has(session.id)}
+        isArchived={!isChild && archivedSessionIdSet.has(session.id)}
         childCount={children.length}
         renderChildren={
           children.length > 0

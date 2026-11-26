@@ -24,6 +24,7 @@ export async function readSessionCatalog(source: {
   const exemptSessionIds = new Set([
     ...Object.keys(ownershipBefore),
     ...settings.pinnedSessionIds,
+    ...settings.archivedSessionIds,
     ...(settings.hyperSessionId ? [settings.hyperSessionId] : []),
   ]);
   // Fewer than 250 ordinary Sessions precede any of the newest 250, so each lies
@@ -32,7 +33,7 @@ export async function readSessionCatalog(source: {
   const ownershipAfter = await readSessionOwnership();
   const ownership = { ...ownershipBefore, ...ownershipAfter };
   const retainedSessionIds = new Set([...exemptSessionIds, ...Object.keys(ownershipAfter)]);
-  // Managed sessions and pins do not consume the ordinary-history budget.
+  // Managed sessions, pins, and archived sessions do not consume the ordinary-history budget.
   const recentSessions = listedSessions
     .filter(({ id }) => !retainedSessionIds.has(id))
     .sort(

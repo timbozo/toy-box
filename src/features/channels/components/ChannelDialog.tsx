@@ -25,6 +25,7 @@ import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import { SessionLocationPicker } from "@sessions/components/location/SessionLocationPicker";
 import { getRecentDirectories } from "@sessions/model/recentDirectories";
+import { useWorkspaceSelector } from "@workspace/hooks/state";
 import { sessionQueries } from "@sessions/queries";
 import { useWorkspaceRoots } from "@workspace/hooks/layout/roots";
 
@@ -47,9 +48,12 @@ export function ChannelDialog({ channel, open, onOpenChange }: ChannelDialogProp
   const edit = useMutation(channelMutations.edit());
   const { isPending, error } = initialChannel ? edit : create;
   const { models, defaultModel } = useModels(initialChannel?.model.provider);
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
   const { data: recentDirectory } = useQuery({
     ...sessionQueries.state,
-    select: (state) => getRecentDirectories(state.sessions)[0]?.cwd,
+    select: (state) => getRecentDirectories(state.sessions, archivedSessionIds)[0]?.cwd,
   });
   const effectiveDirectory = directory === null ? undefined : (directory ?? recentDirectory);
   const effectiveModel = model ?? defaultModel;
