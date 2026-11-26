@@ -140,14 +140,17 @@ function WorkspacePage() {
     ...appQueries.list,
     select: (list) => list.apps.map((app) => app.id),
   });
-  const { hyperSessionId: storedHyperSessionId, pinnedSessionIds } = useWorkspaceSelector(
-    (workspace) => ({
-      hyperSessionId: workspace.settings.hyperSessionId,
-      pinnedSessionIds: workspace.settings.pinnedSessionIds,
-    }),
-  );
+  const {
+    hyperSessionId: storedHyperSessionId,
+    pinnedSessionIds,
+    archivedSessionIds,
+  } = useWorkspaceSelector((workspace) => ({
+    hyperSessionId: workspace.settings.hyperSessionId,
+    pinnedSessionIds: workspace.settings.pinnedSessionIds,
+    archivedSessionIds: workspace.settings.archivedSessionIds,
+  }));
   useWorkspaceSync(workspaceRevision);
-  const { sessions, ownership, worktreeSessionIds, createSession } = useSessions();
+  const { sessions, ownership, createSession } = useSessions();
 
   // Create a draft session, optionally with an initial artifact or alongside the workspace.
   function handleCreateSession(options: SessionCreationOptions = {}) {
@@ -186,6 +189,7 @@ function WorkspacePage() {
     query: "",
     hiddenProviders: [],
     showExternalSessions: true,
+    showArchived: false,
   });
   const toggleSidebar = () => setIsSidebarCollapsed(!isSidebarCollapsed);
 
@@ -211,6 +215,7 @@ function WorkspacePage() {
       query: deferredFilter,
     },
     pinnedSessionIds,
+    archivedSessionIds,
   );
 
   // The setting can outlive a session deleted outside Toy Box.
@@ -285,11 +290,12 @@ function WorkspacePage() {
     filter,
     onFilterChange: setFilter,
     sessions: filteredSessions,
-    worktreeSessionIds,
     emptyMessage:
       deferredFilter || filter.hiddenProviders.length || !filter.showExternalSessions
         ? "No sessions match your filters"
-        : undefined,
+        : filter.showArchived
+          ? "No archived sessions"
+          : undefined,
     onAppOpenInHyper: handleAppOpenInHyper,
   } satisfies SidebarProps;
 

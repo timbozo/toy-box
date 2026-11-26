@@ -1,3 +1,14 @@
+## 📅 v0.4.10 (11/18/26)
+
+- Sessions can now be archived from their menu. An archived session leaves the session list but keeps its history; "Show archived sessions" in the sidebar filter lists them, and "Unarchive session" brings one back. Agents can archive a session with `archive_session`. An archived session's folder no longer appears among the recent folders offered for new sessions, channels and inbox tasks.
+- The folder menu for new work now lists channel folders first, then recent folders, and no longer offers another session's worktree.
+- Channel requests now show attachments when the lead adds them.
+- Upgraded the GitHub Copilot SDK to use the new Microsoft Copilot SDK (your CLI setup remains the same)
+- File/artifact links in channel messages can now open the respective artifact on click
+- Automations in the sidebar show when their last run started, and one whose run failed to start no longer opens a session that was already deleted. A finished run no longer moves its automation to the top of the list.
+- The automation schedule editor now opens more cron expressions, such as weekday ranges, in its Daily and Interval modes.
+- Stopping and deleting sessions now works more correctly across providers
+
 ## 📅 v0.4.9 (11/17/26)
 
 - Channels now allow agents to run background commands and then wait on them. This provides a more deterministic and efficient means of waiting on things like CI, deployments, eval runs, etc.

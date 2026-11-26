@@ -216,8 +216,23 @@ const deleteSessionTool = defineTool("delete_session", {
   },
 });
 
+const archiveSessionTool = defineTool("archive_session", {
+  description:
+    "Archives a session that is finished: it leaves the session list but keeps its history, " +
+    "and the user can list archived sessions and unarchive it. Nothing is deleted.",
+  parameters: z.object({
+    sessionId: z.string().describe('The ID of the session to archive, or "self" for this session'),
+  }),
+  handler: async (args, { sessionId }) => {
+    const { archiveSession } = await import("@workspace/server/state");
+
+    await archiveSession(args.sessionId === "self" ? sessionId : args.sessionId);
+    return JSON.stringify({ archived: true });
+  },
+});
+
 export const hyperLifecycleTools = [createSessionTool];
-export const lifecycleTools = [deleteSessionTool];
+export const lifecycleTools = [archiveSessionTool, deleteSessionTool];
 const setSessionPreview = defineTool("set_session_preview", {
   description:
     "Sets this session's current runnable preview to {kind:'url',url}, {kind:'screen',screenId}, or null to clear it. " +

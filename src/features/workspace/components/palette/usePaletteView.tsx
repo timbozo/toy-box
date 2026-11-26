@@ -33,7 +33,7 @@ import { sessionMutations } from "@sessions/mutations";
 import type { Session } from "@sessions/model";
 import { sessionAttention } from "@sessions/model/activity";
 import { createSessionPane } from "@sessions/model/panes";
-import { getRecentDirectories } from "@sessions/model/recentDirectories";
+import { getRecentDirectories, groupDirectoryChoices } from "@sessions/model/recentDirectories";
 import { selectSessionChildren, sessionQueries } from "@sessions/queries";
 import { useSessionsActivity } from "@sessions/useSessionActivity";
 import { useWorkspaceRoots } from "@workspace/hooks/layout/roots";
@@ -92,6 +92,7 @@ export function usePaletteView(
   const activities = useSessionsActivity((activities) => activities);
   const workspace = useWorkspaceSelector(({ settings }) => ({
     pinnedIds: settings.pinnedSessionIds,
+    archivedIds: settings.archivedSessionIds,
     disabledProviders: settings.disabledProviders,
     useWorktree: settings.useWorktree,
   }));
@@ -133,7 +134,7 @@ export function usePaletteView(
   const enabledAutomations = automations.filter((automation) =>
     isEnabled(automation.model.provider),
   );
-  const recentDirectories = getRecentDirectories(sessions);
+  const recentDirectories = getRecentDirectories(sessions, workspace.archivedIds);
 
   const model = launch.model ?? defaultModel ?? undefined;
   const modelKey = model && modelConfigurationKey(model);
@@ -358,7 +359,10 @@ export function usePaletteView(
       // Sessions past the cap fall through to the sections below.
       const listedIds = new Set(readyForYou.map(({ id }) => id));
       const triage = triageSessions(
-        sessions.filter(({ id }) => !listedIds.has(createSessionPane(id).id)),
+        sessions.filter(
+          ({ id }) =>
+            !listedIds.has(createSessionPane(id).id) && !workspace.archivedIds.includes(id),
+        ),
         {
           activities,
           pinnedIds: workspace.pinnedIds,
@@ -436,8 +440,12 @@ export function usePaletteView(
     }
 
     case "directory": {
-      const items = recentDirectories.map((recent) =>
-        directoryItem(recent, recent.cwd === directory),
+      const choices = groupDirectoryChoices(
+        recentDirectories,
+        channels.map((channel) => channel.directory),
+      );
+      const items = [...choices.channel, ...choices.recent].map((choice) =>
+        directoryItem(choice, choice.cwd === directory),
       );
       // As in the composer, whether new work gets its own worktree is chosen with its directory.
       const worktree: PaletteItem = {

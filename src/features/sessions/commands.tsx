@@ -1,4 +1,4 @@
-import { FolderOpen, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, FolderOpen, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { OpenFileDialog } from "@files/components/browser/OpenFileDialog";
 import type { Command } from "@/shared/commands/command";
 import { DestructiveConfirmationDialog } from "@/shared/dialogs/DestructiveConfirmationDialog";
@@ -9,11 +9,13 @@ import { sessionMutations } from "./mutations";
 
 /**
  * What can be done to a session wherever it's listed (its sidebar menu, or its row in the command
- * palette). Pinning is offered only where the caller can pin it, e.g. not to a child session.
+ * palette). Pinning and archiving are offered only where the caller can do them, e.g. not to a
+ * child session.
  */
 export function sessionCommands(
   session: Session,
   pin?: { isPinned: boolean; toggle: () => void },
+  archive?: { isArchived: boolean; toggle: () => void },
 ): Command[] {
   const isDraft = !session.provider;
   const directory = session.context?.directory;
@@ -53,6 +55,17 @@ export function sessionCommands(
             title: "Browse files",
             icon: FolderOpen,
             run: () => openDialog((dialog) => <OpenFileDialog {...dialog} directory={directory} />),
+          },
+        ]
+      : []),
+    ...(archive
+      ? [
+          {
+            id: "session.archive",
+            title: archive.isArchived ? "Unarchive session" : "Archive session",
+            icon: archive.isArchived ? ArchiveRestore : Archive,
+            disabled: isDraft,
+            run: archive.toggle,
           },
         ]
       : []),

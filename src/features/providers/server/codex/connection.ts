@@ -34,6 +34,8 @@ export class CodexConnection implements SessionConnection {
   #model: ModelConfiguration;
   /** Running turns by thread: the root's and its direct subagents', which call Toy Box tools too. */
   #turns = new Map<string, Pick<Turn, "id"> & { controller: AbortController; terminal?: string }>();
+  /** Settles once a root `turn/start` announces its turn. Codex can't steer or interrupt it before. */
+  #starting: ReturnType<typeof Promise.withResolvers<void>> | undefined;
   #subagents = new Set<string>();
   #questions = new Map<string, PendingQuestion>();
   #disconnected = false;
@@ -51,6 +53,7 @@ export class CodexConnection implements SessionConnection {
       rpc.onNotification((notification) => this.#notification(notification)),
       rpc.onRequest((request) => this.#request(request)),
       rpc.onClose(() => {
+        this.#starting?.resolve();
         this.#cancelRequests();
         this.#emit({ type: "end", reason: "error" });
       }),
@@ -67,6 +70,7 @@ export class CodexConnection implements SessionConnection {
       throw new SessionConnectionUnavailableError("Codex session disconnected.");
     const input = encodeInput(message, this.skills);
     if (message.immediate) {
+      await this.#starting?.promise;
       const turn = this.#turns.get(this.nativeId);
       if (!turn) throw new Error("The Codex turn has ended. Send this message as a new turn.");
       await this.rpc.request("turn/steer", {
@@ -76,7 +80,8 @@ export class CodexConnection implements SessionConnection {
         input,
       });
     } else {
-      await this.rpc.request("turn/start", {
+      const starting = (this.#starting = Promise.withResolvers());
+      const request = this.rpc.request("turn/start", {
         threadId: this.nativeId,
         clientUserMessageId: message.clientId,
         input,
@@ -85,6 +90,8 @@ export class CodexConnection implements SessionConnection {
         // Some Codex models default to no visible reasoning summaries.
         summary: "auto",
       });
+      void request.catch(() => starting.resolve());
+      await request;
     }
   }
 
@@ -106,8 +113,9 @@ export class CodexConnection implements SessionConnection {
     return true;
   }
 
-  /** Stop interrupts the session tree's running turns: the root's and its subagents'. */
+  /** Stop interrupts the session tree's running turns and asks Codex to clean up its terminals. */
   async abort(): Promise<void> {
+    await this.#starting?.promise;
     this.#cancelRequests();
     const turn = this.#turns.get(this.nativeId);
     if (turn)
@@ -116,17 +124,23 @@ export class CodexConnection implements SessionConnection {
         turnId: turn.id,
       });
     const subagents = await this.#loadedSubagents();
-    // Workaround (Codex CLI 0.166.0; listed in providers/AGENTS.md): an empty turn ID interrupts
+    // Workaround (Codex CLI 0.170.0; listed in providers/AGENTS.md): an empty turn ID interrupts
     // whatever a subagent is running, so Stop needs no subagent turn tracking. Replace with
     // thread/interrupt (openai/codex#40953).
     await Promise.all(
       subagents.map((threadId) => this.rpc.request("turn/interrupt", { threadId, turnId: "" })),
     );
+    for (const threadId of [this.nativeId, ...subagents]) {
+      void this.rpc.request("thread/backgroundTerminals/clean", { threadId }).catch((error) => {
+        console.warn(`Codex thread ${threadId}: failed to clean up background terminals:`, error);
+      });
+    }
   }
 
   async disconnect(): Promise<void> {
     if (this.#disconnected) return;
     this.#disconnected = true;
+    this.#starting?.resolve();
     this.#cancelRequests();
     for (const dispose of this.#dispose) dispose();
     this.#listeners.clear();
@@ -183,7 +197,10 @@ export class CodexConnection implements SessionConnection {
       case "turn/started": {
         if (!root && !this.#subagents.has(threadId)) break;
         this.#turns.set(threadId, { id: params.turn.id, controller: new AbortController() });
-        if (root) this.#emit({ type: "model_changed", model: this.#model });
+        if (root) {
+          this.#starting?.resolve();
+          this.#emit({ type: "model_changed", model: this.#model });
+        }
         break;
       }
       case "turn/completed": {

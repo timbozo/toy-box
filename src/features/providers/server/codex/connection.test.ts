@@ -48,7 +48,7 @@ function sessionState(events: SessionEvent[]) {
   return events.reduce(applySessionEvent, createInitialSessionState());
 }
 
-function setup(tools: SessionConfiguration["tools"] = []) {
+function setup(tools: SessionConfiguration["tools"] = [], { holdCleanupResponse = false } = {}) {
   const written: Record<string, unknown>[] = [];
   const responses = new Map<string, (value: unknown) => void>();
   const events: SessionEvent[] = [];
@@ -73,6 +73,7 @@ function setup(tools: SessionConfiguration["tools"] = []) {
       responses.get(String(request.id))?.(request);
       return;
     }
+    if (holdCleanupResponse && request.method === "thread/backgroundTerminals/clean") return;
     let result: unknown = {};
     if (request.method === "turn/start") result = { turn };
     if (request.method === "turn/steer") result = { turnId: turn.id };
@@ -164,6 +165,22 @@ test("a late turn/start response never reactivates a completed Codex turn", asyn
     connection.send({ role: "user", clientId: "steer", content: "Late", immediate: true }),
   ).rejects.toThrow("turn has ended");
   expect(written.some(({ method }) => method === "turn/steer")).toBe(false);
+});
+
+test("a steer right after a send waits for Codex to announce the turn it steers", async () => {
+  const { connection, notify, written } = setup();
+  await connection.send({ role: "user", clientId: "first", content: "Start" });
+  const steering = connection.send({
+    role: "user",
+    clientId: "steer",
+    content: "Also",
+    immediate: true,
+  });
+  notify("turn/started", { turn });
+  await steering;
+  expect(written.filter(({ method }) => method === "turn/steer")).toEqual([
+    expect.objectContaining({ params: expect.objectContaining({ expectedTurnId: turn.id }) }),
+  ]);
 });
 
 test("subagent activity stays nested under one agent call live and after replay", async () => {
@@ -734,7 +751,7 @@ test.each(["abort", "completion", "disconnect"] as const)(
   },
 );
 
-test("Stop interrupts the session tree's running turns, including every loaded subagent", async () => {
+test("Stop interrupts the root and every loaded subagent before cleaning their terminals", async () => {
   const { connection, notify, setSubagents, written } = setup();
   setSubagents([
     { id: "busy", status: { type: "active", activeFlags: [] } },
@@ -754,7 +771,55 @@ test("Stop interrupts the session tree's running turns, including every loaded s
     },
     { method: "turn/interrupt", params: { threadId: "busy", turnId: "" } },
     { method: "turn/interrupt", params: { threadId: "idle", turnId: "" } },
+    { method: "thread/backgroundTerminals/clean", params: { threadId: "native" } },
+    { method: "thread/backgroundTerminals/clean", params: { threadId: "busy" } },
+    { method: "thread/backgroundTerminals/clean", params: { threadId: "idle" } },
   ]);
+});
+
+test("Stop does not wait for terminal cleanup and logs a later failure", async () => {
+  const { connection, rpc, notify, written } = setup([], { holdCleanupResponse: true });
+  const warning = Promise.withResolvers<unknown[]>();
+  const warn = spyOn(console, "warn").mockImplementation((...args) => warning.resolve(args));
+  try {
+    notify("turn/started", { turn });
+    await connection.abort();
+    const cleanup = written.find(({ method }) => method === "thread/backgroundTerminals/clean");
+    expect(cleanup).toBeDefined();
+    rpc.receive(JSON.stringify({ id: cleanup!.id, error: { message: "Refused" } }) + "\n");
+    expect(await warning.promise).toEqual([
+      expect.stringContaining("native"),
+      expect.objectContaining({ message: "Refused" }),
+    ]);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test.each(["during", "after"])(
+  "Stop %s a send interrupts its turn once Codex announces it, and not before",
+  async (when) => {
+    const { connection, notify, written } = setup();
+    const sending = connection.send({ role: "user", clientId: "first", content: "Start" });
+    if (when === "after") await sending;
+    const stopping = connection.abort();
+    await sending;
+    expect(written.some(({ method }) => method === "turn/interrupt")).toBe(false);
+    notify("turn/started", { turn });
+    await stopping;
+    expect(written.filter(({ method }) => method === "turn/interrupt")).toEqual([
+      expect.objectContaining({ params: { threadId: "native", turnId: turn.id } }),
+    ]);
+  },
+);
+
+test("Stop during a send Codex refuses settles without waiting for a turn", async () => {
+  const { connection, rpc, written } = setup();
+  spyOn(rpc, "request").mockRejectedValueOnce(new Error("Refused"));
+  const sending = connection.send({ role: "user", clientId: "first", content: "Start" });
+  await connection.abort();
+  await expect(sending).rejects.toThrow("Refused");
+  expect(written.some(({ method }) => method === "turn/interrupt")).toBe(false);
 });
 
 test("native tools reject calls outside the Toy Box namespace", async () => {

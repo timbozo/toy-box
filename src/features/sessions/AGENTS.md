@@ -52,7 +52,7 @@ submission addressed to a session, including its turn-specific model or immediat
 A queued message is that same value plus its queue status. `SessionLaunch` composes the initial
 message payload with an optional `SessionLocation`; location is creation context, not message data.
 
-`SessionsState` combines draft records, provider metadata, worktrees, and a typed `ownership` index
+`SessionsState` combines draft records, provider metadata, and a typed `ownership` index
 for Automation and Worker sessions. Ownership is derived from feature records and can exist
 before a backing session. Worker ownership includes its optional parent relationship. Generic
 consumers use this index for filtering, draft reuse, editor defaults, and SDK classification rather
@@ -70,12 +70,17 @@ transition as a `session.*` workspace event. Browsers read it through `sessionQu
 and `useSessionActivity.ts`, and `sessionMutations.markRead` clears unread before the server confirms.
 
 `src/server/managedSessions.ts` at the application composition boundary selects the 250 most recent
-ordinary, unpinned sessions, plus all managed and pinned sessions. Drafts and sessions with shared
+ordinary sessions, plus all managed, pinned, and archived sessions. Drafts and sessions with shared
 activity are retained as well. This bounds browsing metadata without deleting history; old ordinary
 sessions outside the catalog do not reopen through a URL. Each read lists enough of every
 provider's newest sessions to cover that window, and `findSessions` reads retained sessions outside
 those listings by ID. The sidebar filters the retained catalog before displaying up to 50 ordinary
 matches, while keeping pins visible outside that display limit.
+An archived session is one whose ID is in the `archivedSessionIds` setting: it keeps its history and
+runtime, and the sidebar lists it only under "Show archived sessions", which lists nothing else.
+The session menu archives and unarchives, and agents archive through `archive_session`.
+Archived sessions and session worktrees contribute nothing to the derived recent directories, and
+the directory picker lists channel directories ahead of them.
 Sessions with Worker children have a compact child-count badge and chevron beside the title.
 The badge is a separate disclosure button, collapsed by default.
 It occupies only the title line; the relative time and location keep their normal alignment.
@@ -157,7 +162,9 @@ The browser sends one way and subscribes one way. A send posts `deliverMessage`,
 detail's query key, and the detail waits for this client's deliveries before subscribing from the
 revision it held before sending, so the replay carries the whole turn even when it started first.
 A snapshot could hide the optimistic turn, so one that opens a subscription after a delivery started
-is dropped, and the detail resubscribes once the delivery settles. A draft's first send carries its
+is dropped, and the detail resubscribes once the delivery settles. A Stop carries the same key, so a
+cold start's run hint that restarts the detail mid-Stop waits for it instead of replaying the
+stopping run. A draft's first send carries its
 location, which creates the session with that message, and `sessionMutations.startSession()` does
 the same for a new ID without mounting a pane. A subscription reads `GET /api/sessions/$sessionId`
 with `after` through the shared `readEventStream`, which Channels also uses. When nothing is live, it

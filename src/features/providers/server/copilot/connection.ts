@@ -1,8 +1,4 @@
-import type {
-  CopilotSession,
-  SessionConfig as SdkSessionConfig,
-  SessionEvent as SdkEvent,
-} from "@github/copilot-sdk";
+import type { CopilotSession, SessionEvent as SdkEvent } from "@microsoft/copilot-sdk";
 import type { ModelConfiguration } from "@providers/model";
 import type { SessionConnection } from "@providers/server/provider";
 import { encodeSystemMessage, systemMessagePrompt } from "@sessions/model/systemMessages";
@@ -29,6 +25,17 @@ export function connectCopilotSession(
   native: CopilotSession,
   early: ReturnType<typeof holdNativeEvents>,
 ): SessionConnection {
+  let sending: Promise<unknown> | undefined;
+  /** Settles once the CLI takes up the send that starts a turn. */
+  let starting: (ReturnType<typeof Promise.withResolvers<void>> & { clientId: string }) | undefined;
+  // Registered before onEvent's forward, so the idle that ends a turn settles before the runtime
+  // drains the next send in response, which would otherwise lose its wait to that same idle.
+  native.on((event) => {
+    if (starting && takesUp(event, starting.clientId)) {
+      starting.resolve();
+      starting = undefined;
+    }
+  });
   return {
     nativeId: native.sessionId,
     onEvent(listener) {
@@ -42,7 +49,10 @@ export function connectCopilotSession(
       return native.on(forward);
     },
     async send(message) {
-      await native.send({
+      const turn = message.immediate
+        ? undefined
+        : (starting = { clientId: message.clientId, ...Promise.withResolvers<void>() });
+      sending = native.send({
         ...(message.role === "system"
           ? {
               prompt: systemMessagePrompt(message.content),
@@ -56,18 +66,37 @@ export function connectCopilotSession(
         ...(message.immediate ? { mode: "immediate" } : {}),
         clientTurnId: message.clientId,
       });
+      // A rejected send starts no turn.
+      await sending.catch((error: unknown) => {
+        turn?.resolve();
+        throw error;
+      });
     },
+    // The native switch keeps an effort it omits, so a configuration without one clears it.
     async setModel(model: ModelConfiguration) {
-      await native.setModel(model.name, toSdkSetModelOptions(model));
+      await native.rpc.model.switchTo({
+        modelId: model.name,
+        ...toSdkSetModelOptions(model),
+        reasoningEffort: model.reasoningEffort ?? null,
+      });
     },
     async answerQuestion({ requestId, answer, wasFreeform }) {
       return (
         await native.rpc.ui.handlePendingUserInput({ requestId, response: { answer, wasFreeform } })
       ).success;
     },
-    // Native abort also cancels queued and steering input.
-    abort: () => native.abort(),
-    disconnect: () => native.disconnect(),
+    // Native abort cancels the input the CLI has admitted but not taken up, so the send that starts
+    // a turn stays in history only once taken up. The SDK writes a send only after preparing it, so
+    // steers wait for their admission.
+    async abort() {
+      await sending?.catch(() => undefined);
+      await starting?.promise;
+      await native.abort();
+    },
+    disconnect() {
+      starting?.resolve();
+      return native.disconnect();
+    },
     async rename(name, automatic) {
       if (automatic) return (await native.rpc.name.setAuto({ summary: name })).applied;
       await native.rpc.name.set({ name });
@@ -86,6 +115,12 @@ export function connectCopilotSession(
   };
 }
 
+/** The CLI takes up a send when it records it. A turn that ends retires one it never took up. */
+function takesUp(event: SdkEvent, clientId: string): boolean {
+  if (event.type === "user.message") return event.data.clientTurnId === clientId;
+  return event.type === "session.idle" || (event.type === "session.error" && !event.agentId);
+}
+
 type SdkSetModelOptions = NonNullable<Parameters<CopilotSession["setModel"]>[1]>;
 
 // The SDK's context tier union is narrower than live metadata, so it is cast at the boundary.
@@ -93,7 +128,7 @@ export function toSdkSetModelOptions(configuration?: ModelConfiguration): SdkSet
   return {
     ...(configuration?.reasoningEffort ? { reasoningEffort: configuration.reasoningEffort } : {}),
     ...(configuration?.contextTier
-      ? { contextTier: configuration.contextTier as SdkSessionConfig["contextTier"] }
+      ? { contextTier: configuration.contextTier as SdkSetModelOptions["contextTier"] }
       : {}),
   };
 }

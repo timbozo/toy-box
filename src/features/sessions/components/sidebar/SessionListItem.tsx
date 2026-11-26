@@ -17,9 +17,10 @@ type SessionListItemProps = {
   session: Session;
   onSelect: (sessionId: string, toggleInWorkspace: boolean) => void;
   onPinToggle?: (sessionId: string) => void;
+  onArchiveToggle?: (sessionId: string) => void;
   isActive?: boolean;
   isPinned?: boolean;
-  isWorktree?: boolean;
+  isArchived?: boolean;
   childCount: number;
   renderChildren?: () => ReactNode;
 };
@@ -28,9 +29,10 @@ export function SessionListItem({
   session,
   onSelect,
   onPinToggle,
+  onArchiveToggle,
   isActive = false,
   isPinned = false,
-  isWorktree = false,
+  isArchived = false,
   childCount,
   renderChildren,
 }: SessionListItemProps) {
@@ -95,7 +97,7 @@ export function SessionListItem({
               cwd={directory}
               repository={session.context?.repository}
               gitRoot={session.context?.gitRoot}
-              isWorktree={isWorktree}
+              isWorktree={Boolean(session.worktree)}
             />
           )
         }
@@ -104,6 +106,7 @@ export function SessionListItem({
             commands={sessionCommands(
               session,
               onPinToggle && { isPinned, toggle: () => onPinToggle(session.id) },
+              onArchiveToggle && { isArchived, toggle: () => onArchiveToggle(session.id) },
             )}
           />
         }

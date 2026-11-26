@@ -4,7 +4,13 @@ import { openTestDatabase } from "@/server/testFixtures";
 import { deleteSavedDraft } from "./drafts";
 import type { WorkspaceEvent } from "@workspace/model/events";
 import { DEFAULT_SETTINGS } from "@workspace/model/config/settings";
-import { deleteSessionWorkspaceState, getWorkspaceState, updateDraft, updateSettings } from ".";
+import {
+  archiveSession,
+  deleteSessionWorkspaceState,
+  getWorkspaceState,
+  updateDraft,
+  updateSettings,
+} from ".";
 
 describe("workspace state", () => {
   test("persists settings as one complete document", async () => {
@@ -60,9 +66,32 @@ describe("workspace state", () => {
     });
   });
 
-  test("deleting a session drops only its own pin and Hyper membership", async () => {
+  test("archiving a session keeps the others archived and broadcasts once", async () => {
     await openTestDatabase();
-    await updateSettings({ pinnedSessionIds: ["kept", "deleted"], hyperSessionId: "hyper" });
+    await updateSettings({ archivedSessionIds: ["earlier"] });
+
+    const events: WorkspaceEvent[] = [];
+    const unsubscribe = subscribeWorkspaceEvents((event) => {
+      if (event.type === "settings.changed") events.push(event);
+    });
+    onTestFinished(unsubscribe);
+
+    await Promise.all([archiveSession("finished"), archiveSession("finished")]);
+
+    expect((await getWorkspaceState()).settings.archivedSessionIds).toEqual([
+      "earlier",
+      "finished",
+    ]);
+    expect(events).toHaveLength(1);
+  });
+
+  test("deleting a session drops only its own pin, archive, and Hyper membership", async () => {
+    await openTestDatabase();
+    await updateSettings({
+      pinnedSessionIds: ["kept", "deleted"],
+      archivedSessionIds: ["kept", "deleted"],
+      hyperSessionId: "hyper",
+    });
 
     const events: WorkspaceEvent[] = [];
     const unsubscribe = subscribeWorkspaceEvents((event) => {
@@ -73,6 +102,7 @@ describe("workspace state", () => {
     await deleteSessionWorkspaceState("deleted");
     expect((await getWorkspaceState()).settings).toMatchObject({
       pinnedSessionIds: ["kept"],
+      archivedSessionIds: ["kept"],
       hyperSessionId: "hyper",
     });
 
@@ -82,7 +112,7 @@ describe("workspace state", () => {
       hyperSessionId: null,
     });
 
-    // Deleting a session that was neither pinned nor Hyper commits and broadcasts nothing.
+    // Deleting a session that was neither pinned, archived, nor Hyper commits and broadcasts nothing.
     await deleteSessionWorkspaceState("unrelated");
     expect(events).toHaveLength(2);
   });

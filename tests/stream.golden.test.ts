@@ -1,5 +1,5 @@
 import { connectCopilotSession, holdNativeEvents } from "@providers/server/copilot/connection";
-import type { CopilotSession, SessionEvent as SdkSessionEvent } from "@github/copilot-sdk";
+import type { CopilotSession, SessionEvent as SdkSessionEvent } from "@microsoft/copilot-sdk";
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { WorkspaceEvent } from "@workspace/model/events";
 import type { SessionState, SessionSubscriptionEvent } from "@sessions/model";
@@ -53,7 +53,6 @@ mock.module("@sessions/server/state/registry", () => ({
   evictConnection: () => {},
   evictConnectionIfStale: () => false,
   deleteSessionResources: unused,
-  removeDeletedSessionState: unused,
 }));
 mock.module("@workspace/server/events", () => ({
   getWorkspaceRevision: unused,

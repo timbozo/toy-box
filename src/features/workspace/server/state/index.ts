@@ -38,16 +38,23 @@ async function commitSettingsChange(patch: Partial<Settings>): Promise<Settings>
   return settings;
 }
 
+/** Leave a session out of the session list while keeping it and its history. */
+export function archiveSession(sessionId: string): Promise<void> {
+  return settingsChangeQueue.enqueue(async () => {
+    const { archivedSessionIds } = await getSettings();
+    await commitSettingsChange({ archivedSessionIds: [...archivedSessionIds, sessionId] });
+  });
+}
+
 /** Drops a deleted session's draft and the settings that reference it. */
 export function deleteSessionWorkspaceState(sessionId: string): Promise<void> {
   deleteSavedDraft(`session:${sessionId}`);
   // Reading inside the queue keeps this read-filter-write from racing a pin toggle.
   return settingsChangeQueue.enqueue(async () => {
-    const { pinnedSessionIds, hyperSessionId } = await getSettings();
-    if (!pinnedSessionIds.includes(sessionId) && hyperSessionId !== sessionId) return;
-
+    const { pinnedSessionIds, archivedSessionIds, hyperSessionId } = await getSettings();
     await commitSettingsChange({
       pinnedSessionIds: pinnedSessionIds.filter((pinnedId) => pinnedId !== sessionId),
+      archivedSessionIds: archivedSessionIds.filter((archivedId) => archivedId !== sessionId),
       hyperSessionId: hyperSessionId === sessionId ? null : hyperSessionId,
     });
   });

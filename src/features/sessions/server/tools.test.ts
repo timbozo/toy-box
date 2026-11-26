@@ -13,6 +13,8 @@ import * as streamModule from "@sessions/server/runtime";
 import * as registryModule from "@sessions/server/state/registry";
 import * as modelProviders from "@providers/server";
 import * as providers from "./providers";
+import { openTestDatabase } from "@/server/testFixtures";
+import { getSettings } from "@workspace/server/state/settings";
 
 const realStreamModule = { ...streamModule };
 const realRegistryModule = { ...registryModule };
@@ -42,6 +44,7 @@ mock.module("@sessions/server/state/registry", () => ({
 const {
   coordinationTools,
   hyperLifecycleTools,
+  lifecycleTools,
   modelTools,
   sessionTitleTools,
   sessionHistoryTools,
@@ -164,6 +167,17 @@ describe("SDK session title tool", () => {
 });
 
 describe("SDK lifecycle tools", () => {
+  test("archive_session archives the named session, or the invoking one as self", async () => {
+    await openTestDatabase();
+    const tool = lifecycleTools.find((candidate) => candidate.name === "archive_session");
+
+    await tool?.handler?.({ sessionId: "other" }, context);
+    const result = await tool?.handler?.({ sessionId: "self" }, context);
+
+    expect(JSON.parse(String(result))).toEqual({ archived: true });
+    expect((await getSettings()).archivedSessionIds).toEqual(["other", "toy-box-caller"]);
+  });
+
   test("create_session creates a standard session without inherited defaults or a worker owner", async () => {
     const tool = hyperLifecycleTools.find((candidate) => candidate.name === "create_session");
 

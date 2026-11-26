@@ -5,7 +5,9 @@ import { FileBrowserDialog } from "@files/components/browser/FileBrowserDialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui/dropdown-menu";
@@ -14,7 +16,13 @@ import { ScrollableFade } from "@/shared/ui/scrollable-fade";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/utils";
 import { SessionLocationIcon } from "../SessionLocationIcon";
-import { getRecentDirectories, type RecentDirectory } from "../../../model/recentDirectories";
+import { useWorkspaceSelector } from "@workspace/hooks/state";
+import { channelQueries } from "@channels/queries";
+import {
+  getRecentDirectories,
+  groupDirectoryChoices,
+  type RecentDirectory,
+} from "../../../model/recentDirectories";
 import { resolveSessionLocation } from "../locationDisplay";
 import { useSessionContext } from "../useSessionContext";
 import { sessionQueries } from "../../../queries";
@@ -91,9 +99,16 @@ function EditableSessionDirectoryPicker({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [browserOpen, setBrowserOpen] = useState(false);
   const { recentDirectories, isLoading: areRecentDirectoriesLoading } = useRecentDirectories();
+  const { data: channelDirectories = [] } = useQuery({
+    ...channelQueries.list,
+    select: (list) => list.channels.map(({ directory }) => directory),
+  });
+  const choices = groupDirectoryChoices(recentDirectories, channelDirectories);
 
   const effectiveValue = value === undefined ? recentDirectories[0]?.cwd : (value ?? undefined);
-  const selectedDirectory = recentDirectories.find((directory) => directory.cwd === effectiveValue);
+  const selectedDirectory = [...choices.channel, ...choices.recent].find(
+    (directory) => directory.cwd === effectiveValue,
+  );
   const { context, error } = useSessionContext(
     effectiveValue
       ? {
@@ -108,10 +123,34 @@ function EditableSessionDirectoryPicker({
     return <SessionDirectoryPickerSkeleton className={className} />;
   }
 
-  const directories =
+  const recentChoices =
     effectiveValue && !selectedDirectory
-      ? [...recentDirectories, { cwd: effectiveValue, repository, gitRoot }]
-      : recentDirectories;
+      ? [...choices.recent, { cwd: effectiveValue, repository, gitRoot }]
+      : choices.recent;
+  const hasChannelChoices = choices.channel.length > 0;
+
+  function renderChoice(directory: RecentDirectory) {
+    const isSelected = directory.cwd === effectiveValue;
+    const location = isSelected ? selectedLocation : resolveSessionLocation(directory);
+    if (!location) return null;
+
+    return (
+      <DropdownMenuItem
+        key={directory.cwd}
+        className="gap-2 py-1.5"
+        onClick={() => onValueChange(isSelected ? null : directory.cwd)}
+      >
+        <Check className={cn("h-3.5 w-3.5 shrink-0", !isSelected && "opacity-0")} />
+        <SessionLocationIcon kind={location.kind} className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-xs">{location.label}</span>
+          <ScrollableFade className="whitespace-nowrap text-2xs text-muted-foreground">
+            <span className="shrink-0">{directory.cwd}</span>
+          </ScrollableFade>
+        </span>
+      </DropdownMenuItem>
+    );
+  }
 
   const selectedLocation = resolveSessionLocation({
     repository: context.repository,
@@ -178,29 +217,27 @@ function EditableSessionDirectoryPicker({
           </div>
           <DropdownMenuSeparator />
           <div className="max-h-[min(20rem,40vh)] overflow-y-auto">
-            {directories.length > 0 ? (
-              directories.map((directory) => {
-                const isSelected = directory.cwd === effectiveValue;
-                const location = isSelected ? selectedLocation : resolveSessionLocation(directory);
-                if (!location) return null;
-
-                return (
-                  <DropdownMenuItem
-                    key={directory.cwd}
-                    className="gap-2 py-1.5"
-                    onClick={() => onValueChange(isSelected ? null : directory.cwd)}
-                  >
-                    <Check className={cn("h-3.5 w-3.5 shrink-0", !isSelected && "opacity-0")} />
-                    <SessionLocationIcon kind={location.kind} className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-xs">{location.label}</span>
-                      <ScrollableFade className="whitespace-nowrap text-2xs text-muted-foreground">
-                        <span className="shrink-0">{directory.cwd}</span>
-                      </ScrollableFade>
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })
+            {hasChannelChoices || recentChoices.length > 0 ? (
+              <>
+                {hasChannelChoices && (
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-2xs text-muted-foreground">
+                      Channels
+                    </DropdownMenuLabel>
+                    {choices.channel.map(renderChoice)}
+                  </DropdownMenuGroup>
+                )}
+                {recentChoices.length > 0 && (
+                  <DropdownMenuGroup>
+                    {hasChannelChoices && (
+                      <DropdownMenuLabel className="text-2xs text-muted-foreground">
+                        Recent
+                      </DropdownMenuLabel>
+                    )}
+                    {recentChoices.map(renderChoice)}
+                  </DropdownMenuGroup>
+                )}
+              </>
             ) : (
               <DropdownMenuItem disabled className="text-xs text-muted-foreground">
                 No recent directories
@@ -230,9 +267,12 @@ function useRecentDirectories(): {
   recentDirectories: RecentDirectory[];
   isLoading: boolean;
 } {
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
   const { data, isLoading } = useQuery({
     ...sessionQueries.state,
-    select: (state) => getRecentDirectories(state.sessions),
+    select: (state) => getRecentDirectories(state.sessions, archivedSessionIds),
   });
 
   return {

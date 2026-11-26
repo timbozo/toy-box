@@ -47,7 +47,10 @@ export function InboxPane({ onFocusPane }: { onFocusPane?: (paneId: string) => v
   // An untouched selection follows the latest directory; null preserves an explicit clear.
   const [directorySelection, setDirectorySelection] = useState<string | null>();
   const [useWorktree, setUseWorktree] = useState(defaultUseWorktree);
-  const recentDirectory = getRecentDirectories(sessions)[0]?.cwd;
+  const archivedSessionIds = useWorkspaceSelector(
+    (workspace) => workspace.settings.archivedSessionIds,
+  );
+  const recentDirectory = getRecentDirectories(sessions, archivedSessionIds)[0]?.cwd;
   const directory =
     directorySelection === undefined ? recentDirectory : (directorySelection ?? undefined);
 

@@ -20,6 +20,7 @@ describe("settings", () => {
       autoFocusArtifacts: "sessions",
       disabledProviders: ["claude"],
       pinnedSessionIds: ["session-a", "session-b"],
+      archivedSessionIds: ["session-d"],
       hyperSessionId: "session-c",
       serverName: "Studio",
       serverId: "6f1c2a4e-0b7d-4c3a-9e58-2d41f0a7b9c3",
@@ -29,11 +30,15 @@ describe("settings", () => {
     expect(settingsSchema.safeParse(settings).success).toBe(true);
   });
 
-  test("canonicalizes pinned session IDs as a set", () => {
+  test("canonicalizes pinned and archived session IDs as sets", () => {
     expect(
-      normalizeSettings({ pinnedSessionIds: ["session-b", "session-a", "session-b"] }),
+      normalizeSettings({
+        pinnedSessionIds: ["session-b", "session-a", "session-b"],
+        archivedSessionIds: ["session-d", "session-c", "session-d"],
+      }),
     ).toMatchObject({
       pinnedSessionIds: ["session-a", "session-b"],
+      archivedSessionIds: ["session-c", "session-d"],
     });
   });
 
