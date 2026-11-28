@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { PanelRightClose } from "lucide-react";
 import { AgentCompletionMenu } from "@channels/components/agents/AgentCompletionMenu";
 import { agentCompletionSource } from "@channels/components/agents/agentCompletionSource";
 import {
@@ -92,11 +92,11 @@ export function ChannelThreadPanel({
             variant="ghost"
             size="icon-sm"
             className="ml-auto"
-            aria-label="Close thread"
-            title="Close thread"
+            aria-label="Collapse thread"
+            title="Collapse thread"
             onClick={onClose}
           >
-            <X />
+            <PanelRightClose />
           </Button>
         </div>
         <ScrollableFade axis="vertical" rootClassName="min-h-0 flex-1 bg-panel">
