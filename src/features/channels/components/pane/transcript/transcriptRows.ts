@@ -56,6 +56,7 @@ type RowContext = {
   members: readonly ChannelAgent[];
   bookmarks: readonly number[];
   latestUserSequence: number;
+  requestSequence?: number | null;
 };
 
 /**
@@ -72,6 +73,7 @@ export function transcriptRows(
     bookmarks = [],
     unreadAfter,
     view = "all",
+    requestSequence,
   }: {
     lead: ChannelAgent;
     members: readonly ChannelAgent[];
@@ -79,12 +81,16 @@ export function transcriptRows(
     /** Where unread messages began on arrival; null or undefined marks none. */
     unreadAfter?: number | null;
     view?: TranscriptView;
+    /** The Channel's pending request, or null when none pends. A reply in a thread can answer it
+     *  without appearing here, so this, when given, decides which request pends. */
+    requestSequence?: number | null;
   },
 ): TranscriptRow[] {
   const context: RowContext = {
     lead,
     members,
     bookmarks,
+    requestSequence,
     latestUserSequence: messages.reduce(
       (latest, { sender, sequence }) =>
         sender.type === "user" ? Math.max(latest, sequence) : latest,
@@ -185,10 +191,14 @@ function agentRunEntry(
   context: RowContext,
   previous?: AgentRunEntry,
 ): AgentRunEntry {
-  const { lead, members, latestUserSequence } = context;
+  const { lead, members, latestUserSequence, requestSequence } = context;
   const addressee = addresseeOf(message, context);
+  const pending =
+    requestSequence === undefined
+      ? message.sequence > latestUserSequence
+      : message.sequence === requestSequence;
   const request: ChannelRequestState | undefined = message.request
-    ? message.sequence > latestUserSequence
+    ? pending
       ? "pending"
       : "acknowledged"
     : undefined;

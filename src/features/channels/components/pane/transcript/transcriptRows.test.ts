@@ -212,6 +212,17 @@ describe("agent run entries", () => {
     expect(runOf([asked, userPost(3)])[0]!.request).toBe("acknowledged");
   });
 
+  test("a thread-only reply that answered the request acknowledges it in the transcript", () => {
+    const asked = { ...agentPost(1, "lead"), request: true as const };
+    const rowsWith = (requestSequence: number | null) =>
+      transcriptRows([asked], { lead, members, requestSequence })[0];
+    const request = (row: ReturnType<typeof rowsWith>) =>
+      row?.type === "agent" ? row.entries[0]!.request : undefined;
+    expect(request(rowsWith(1))).toBe("pending");
+    // The user's reply lives only in a thread, so the transcript has no later user message.
+    expect(request(rowsWith(null))).toBe("acknowledged");
+  });
+
   test("a later request pends while an earlier reply keeps acknowledging its own", () => {
     const rows = rowsOf([
       { ...agentPost(1, "lead"), request: true },

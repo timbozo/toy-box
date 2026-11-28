@@ -24,6 +24,14 @@ export const channelTaskSchema = z
         "Optional UTC check-in time, checked once a minute. When due, the owner is privately prompted to report whether the work is converging, and the check-in is cleared.",
       ),
     owner: channelActorSchema.optional(),
+    goalSequence: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        "On a top-level task only: the sequence of the :goal: message whose thread this task groups. Its subtasks are that goal's tasks. Top-level tasks without one form the General group.",
+      ),
     artifactId: z
       .string()
       .min(1)
@@ -148,6 +156,7 @@ const taskPatchSchema = channelTaskInputSchema
   .partial()
   .extend({
     owner: channelTaskInputSchema.shape.owner.nullable(),
+    goalSequence: channelTaskSchema.shape.goalSequence.nullable(),
     artifactId: channelTaskSchema.shape.artifactId.nullable(),
     diff: channelTaskSchema.shape.diff.nullable(),
     checkInAt: channelTaskSchema.shape.checkInAt.nullable(),
@@ -268,6 +277,45 @@ export function unlinkChannelTasks(
       ...(children ? { children: unlinkChannelTasks(children, link, id) } : {}),
     };
   });
+}
+
+/** A goal's slice of the one task tree: the top-level task grouping its thread's work. */
+export function channelGoalTask(
+  tasks: readonly ChannelTask[],
+  goalSequence: number,
+): ChannelTask | undefined {
+  return tasks.find((task) => task.goalSequence === goalSequence);
+}
+
+/** The top-level tasks no goal groups, which clients present together as General. */
+export function channelGeneralTasks(tasks: readonly ChannelTask[]): ChannelTask[] {
+  return tasks.filter((task) => task.goalSequence === undefined);
+}
+
+/** Goal links are top-level and one per goal; which sequences are goals is the caller's to say. */
+type GoalLinkedTask = { id: string; goalSequence?: number; children?: readonly GoalLinkedTask[] };
+
+export function assertChannelGoalLinks(
+  tasks: readonly GoalLinkedTask[],
+  isGoalRoot: (sequence: number) => boolean,
+): void {
+  const linked = new Set<number>();
+  for (const task of tasks) {
+    if (task.goalSequence === undefined) continue;
+    if (!isGoalRoot(task.goalSequence)) {
+      throw new Error(`Task "${task.id}" must group a :goal: message in this channel.`);
+    }
+    if (linked.has(task.goalSequence)) {
+      throw new Error(`Goal ${task.goalSequence} already has a task group.`);
+    }
+    linked.add(task.goalSequence);
+  }
+  const nested = (tasks: readonly GoalLinkedTask[]) =>
+    tasks.flatMap(({ children = [] }) => children);
+  for (let level = nested(tasks); level.length; level = nested(level)) {
+    const task = level.find(({ goalSequence }) => goalSequence !== undefined);
+    if (task) throw new Error(`Only a top-level task can group a goal, not "${task.id}".`);
+  }
 }
 
 /** A task list is complete when it has tasks and every task and subtask is done. */

@@ -3,7 +3,9 @@ import type {
   ChannelAgent,
   ChannelAgentIdentity,
   ChannelLead,
+  ChannelMessage,
   ChannelMember,
+  ChannelThread,
 } from "@channels/model";
 import type { ChannelAgentPresence } from "@channels/model/presence";
 
@@ -26,6 +28,14 @@ type ChannelPane = {
   answer: (content: string) => void;
   /** Begins a mention, so the picker can address or add an agent. */
   mention: () => void;
+  /** Every thread with replies, by root sequence. */
+  threads: readonly ChannelThread[];
+  /** The loaded transcript message with this sequence, such as a cross-post's root. */
+  message: (sequence: number) => ChannelMessage | undefined;
+  /** Set within the thread panel, whose messages don't link to threads again. */
+  inThread?: boolean;
+  /** Opens a top-level message's thread beside the transcript. */
+  openThread: (rootSequence: number) => void;
   /** Opens the shared artifact a message's `file:` link names, or undefined when it names none. */
   openArtifactLink: (href: string) => (() => void) | undefined;
 };

@@ -1,10 +1,12 @@
-import { Clock3, FileText, UserRound } from "lucide-react";
+import { ChevronRight, Clock3, FileText, UserRound } from "lucide-react";
 import { AgentAvatar } from "@channels/components/agents/AgentAvatar";
 import {
   channelAgentIdentity,
   channelTaskElapsedMinutes,
   channelTasksDiff,
+  channelThreadHasUnread,
   type ChannelActor,
+  type ChannelThread,
   type ChannelAgent,
   type ChannelArtifact,
   type ChannelTask,
@@ -25,9 +27,85 @@ export function useChannelTaskItems(options: Parameters<typeof channelTaskItems>
   return channelTaskItems(options, useMinuteClock(channelTasksStarted(options.tasks)));
 }
 
+export function useChannelTaskGroupItems(options: Parameters<typeof channelTaskGroupItems>[0]) {
+  return channelTaskGroupItems(options, useMinuteClock(channelTasksStarted(options.tasks)));
+}
+
 /** Whether any task at any depth has started, so its elapsed time needs a clock. */
 export function channelTasksStarted(tasks: readonly ChannelTask[]): boolean {
   return tasks.some((task) => Boolean(task.startedAt) || channelTasksStarted(task.children ?? []));
+}
+
+/** The Overview's one task tree, grouped: each goal's task first, linked to its thread, then the
+ *  tasks no goal groups under General. */
+export function channelTaskGroupItems(
+  options: Parameters<typeof channelTaskItems>[0] & {
+    threads: readonly ChannelThread[];
+    onOpenThread: (rootSequence: number) => void;
+  },
+  now = Date.now(),
+): ChecklistItem[] {
+  const { tasks, threads, onOpenThread } = options;
+  const items = channelTaskItems(options, now);
+  const goals: ChecklistItem[] = [];
+  const general: ChecklistItem[] = [];
+  tasks.forEach((task, index) => {
+    const item = items[index]!;
+    const goalSequence = task.goalSequence;
+    if (goalSequence === undefined) {
+      general.push(item);
+      return;
+    }
+    const thread = threads.find(({ rootSequence }) => rootSequence === goalSequence);
+    goals.push({
+      ...item,
+      // Prefixed, so no task ID can collide with General among the groups.
+      id: `goal:${item.id}`,
+      title: `\u{1F3AF} ${item.title}`,
+      detail: (
+        <span className="inline-flex items-center gap-[9px]">
+          {item.detail}
+          <GoalThreadLink
+            unread={thread ? channelThreadHasUnread(thread) : false}
+            onOpen={() => onOpenThread(goalSequence)}
+          />
+        </span>
+      ),
+    });
+  });
+  if (general.length === 0) return goals;
+  return [
+    ...goals,
+    { id: "general", title: "General", status: groupStatus(general), children: general },
+  ];
+}
+
+/** A group's status follows every task beneath it: running while any runs, done once all are. */
+function groupStatus(items: readonly ChecklistItem[]): ChecklistItem["status"] {
+  const all = (items: readonly ChecklistItem[]): ChecklistItem[] =>
+    items.flatMap((item) => [item, ...all(item.children ?? [])]);
+  const statuses = all(items).map(({ status }) => status);
+  if (statuses.includes("in_progress")) return "in_progress";
+  if (statuses.every((status) => status === "done")) return "done";
+  if (statuses.includes("blocked")) return "blocked";
+  return "pending";
+}
+
+function GoalThreadLink({ unread, onOpen }: { unread: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-2xs text-muted-foreground hover:text-foreground"
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+    >
+      {unread && <span className="font-semibold text-unread">New</span>}
+      Open thread
+      <ChevronRight aria-hidden className="size-3" />
+    </button>
+  );
 }
 
 /** Both Channel checklists present the same task identities, owners, and linked outcomes. */

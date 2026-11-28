@@ -12,6 +12,7 @@ import { TranscriptSkeleton } from "@/shared/messages/TranscriptSkeleton";
 import { ChannelComposer, type ChannelComposerHandle } from "./ChannelComposer";
 import { ChannelPaneProvider } from "./ChannelPaneContext";
 import { ChannelOverview } from "./overview/ChannelOverview";
+import { ChannelThreadPanel } from "./thread/ChannelThreadPanel";
 import { ChannelTranscript, type ChannelTranscriptHandle } from "./transcript/ChannelTranscript";
 import type { TranscriptView } from "./transcript/transcriptRows";
 
@@ -56,6 +57,7 @@ function ChannelContent({
   const transcriptRef = useRef<ChannelTranscriptHandle>(null);
   const composerRef = useRef<ChannelComposerHandle>(null);
   const [view, setView] = useState<TranscriptView>("all");
+  const [threadRoot, setThreadRoot] = useState<number>();
   const { mutate: bookmark } = useMutation(channelMutations.bookmark());
   const revealFile = useRevealFile();
   // The lead is intrinsic, so the composer can address it before the first snapshot arrives.
@@ -76,6 +78,9 @@ function ChannelContent({
         agent: (id) => channelAgentIdentity(agents, id),
         presence,
         bookmarks: state?.bookmarks ?? [],
+        threads: state?.threads ?? [],
+        message: (sequence) => state?.messages.find((message) => message.sequence === sequence),
+        openThread: setThreadRoot,
         bookmark: (sequence, bookmarked) => bookmark({ channelId, sequence, bookmarked }),
         reply: (agent) => composerRef.current?.reply(agent),
         answer: (content) => void send({ content }).catch(console.error),
@@ -91,7 +96,7 @@ function ChannelContent({
         },
       }}
     >
-      <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_auto] bg-background">
+      <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_auto_auto] grid-rows-[minmax(0,1fr)_auto] bg-background">
         {state && (
           <ChannelOverview
             channel={state.channel}
@@ -109,6 +114,7 @@ function ChannelContent({
               messages={state.messages}
               view={view}
               unreadAfter={unreadAfter}
+              requestSequence={state.channel.requestSequence}
               handleRef={transcriptRef}
               onLoadPrevious={loadPrevious}
             />
@@ -116,6 +122,25 @@ function ChannelContent({
             <TranscriptSkeleton />
           )}
         </div>
+        {state && threadRoot !== undefined && (
+          <aside
+            aria-label="Thread"
+            className={
+              variant === "normal"
+                ? "col-start-2 row-span-2 row-start-1 min-h-0 w-[min(400px,45vw)]"
+                : "col-span-3 col-start-1 row-span-2 row-start-1 z-10 min-h-0"
+            }
+          >
+            <ChannelThreadPanel
+              key={threadRoot}
+              state={state}
+              rootSequence={threadRoot}
+              isVisible={isVisible}
+              onClose={() => setThreadRoot(undefined)}
+              onPost={postMessage}
+            />
+          </aside>
+        )}
         <div className="col-start-1 row-start-2 shrink-0 border-t bg-background px-4 pt-4 md:pb-4">
           <ChannelComposer
             channelId={channelId}

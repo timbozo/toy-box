@@ -21,6 +21,8 @@ import { Route as MessagesRoute } from "./channels/$channelId.messages";
 import { Route as ReadRoute } from "./channels/$channelId.read";
 import { Route as RoutineRunRoute } from "./channels/$channelId.routines.$routineId.run";
 import { Route as RoutineRoute } from "./channels/$channelId.routines.$routineId";
+import { Route as ThreadRoute } from "./channels/$channelId.threads.$rootSequence";
+import { Route as ThreadReadRoute } from "./channels/$channelId.threads.$rootSequence.read";
 
 type Params = Record<string, string>;
 type Call = [route: AnyRoute, params: Params, init?: RequestInit, query?: string];
@@ -105,6 +107,52 @@ test("posting answers the stored message, and history pages it without caching",
   const history = await call(MessagesRoute, params, undefined, "?before=2");
   expect(history.headers.get("Cache-Control")).toBe("no-store");
   expect(await history.json()).toMatchObject({ revision: 1, messages: [{ id: message.id }] });
+});
+
+test("a reply posts into its thread, which reads and pages apart from the transcript", async () => {
+  const { channel, channels } = await openChannel();
+  const params = { channelId: channel.id };
+  await call(MessagesRoute, params, json("POST", { id: "root", content: ":goal: Ship threads" }));
+  const reply = await call(
+    MessagesRoute,
+    params,
+    json("POST", { id: "reply", content: "On it", threadRootSequence: 1, alsoPostToChannel: true }),
+  );
+  expect(await reply.json()).toMatchObject({ threadRootSequence: 1, alsoPostToChannel: true });
+  await channels.appendMessage({
+    ...params,
+    id: "agent-reply",
+    sender: { type: "agent", agentId: channel.id },
+    content: "Done",
+    threadRootSequence: 1,
+  });
+
+  const thread = await call(ThreadRoute, { ...params, rootSequence: "1" });
+  expect(await thread.json()).toMatchObject({
+    root: { id: "root", isGoalRoot: true, content: "Ship threads" },
+    replies: [{ id: "reply" }, { id: "agent-reply" }],
+    thread: { rootSequence: 1, replyCount: 2, latestSequence: 3, seenThrough: 2 },
+  });
+  const read = await call(
+    ThreadReadRoute,
+    { ...params, rootSequence: "1" },
+    json("POST", { sequence: 3 }),
+  );
+  expect(await read.json()).toEqual({ seenThrough: 3 });
+  expect((await call(ThreadRoute, { ...params, rootSequence: "9" })).status).toBe(404);
+  expect((await call(ThreadRoute, { ...params, rootSequence: "x" })).status).toBe(400);
+  const nested = await call(
+    MessagesRoute,
+    params,
+    json("POST", { id: "nested", content: "No", threadRootSequence: 2 }),
+  );
+  expect(nested.status).toBe(422);
+  const stray = await call(
+    MessagesRoute,
+    params,
+    json("POST", { id: "stray", content: "No", alsoPostToChannel: true }),
+  );
+  expect(stray.status).toBe(400);
 });
 
 test("reading answers the user's cursor, and bookmarks map their verbs to idempotent 204s", async () => {

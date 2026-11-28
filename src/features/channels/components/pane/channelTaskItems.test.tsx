@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Checklist } from "@/shared/ui/checklist";
-import { channelTaskItems } from "./channelTaskItems";
+import { channelTaskGroupItems, channelTaskItems } from "./channelTaskItems";
 
 test.each([
   ["2026-10-23T15:12:30.000Z", "12m / 8m"],
@@ -104,4 +104,81 @@ test("artifact icons belong to their task, not its parents, and omit visible tit
   expect(html).toContain('aria-label="Open Project brief"');
   expect(html).toContain('title="Project brief"');
   expect(html).not.toContain(">Project brief<");
+});
+
+const groupOptions = {
+  owners: [],
+  artifacts: [],
+  onArtifactOpen: () => {},
+  onOpenThread: () => {},
+};
+
+test("ungrouped tasks sit under General before any goal exists", () => {
+  const items = channelTaskGroupItems({
+    ...groupOptions,
+    tasks: [{ id: "t1", title: "Review", status: "pending" }],
+    threads: [],
+  });
+  expect(items.map(({ id }) => id)).toEqual(["general"]);
+  expect(items[0]!.children?.map(({ id }) => id)).toEqual(["t1"]);
+});
+
+test("goal tasks lead and link their threads, with ungrouped tasks under General", () => {
+  const items = channelTaskGroupItems({
+    ...groupOptions,
+    tasks: [
+      { id: "t1", title: "Hourly review", status: "in_progress" },
+      {
+        id: "t2",
+        title: "Threads",
+        status: "in_progress",
+        goalSequence: 7,
+        children: [{ id: "t3", title: "Web panel", status: "pending" }],
+      },
+    ],
+    threads: [{ rootSequence: 7, replyCount: 2, latestSequence: 9, seenThrough: 8 }],
+  });
+  expect(items.map(({ id, status }) => [id, status])).toEqual([
+    ["goal:t2", "in_progress"],
+    ["general", "in_progress"],
+  ]);
+  expect(items[0]!.title).toBe("\u{1F3AF} Threads");
+  expect(items[1]!.children?.map(({ id }) => id)).toEqual(["t1"]);
+  const markup = renderToStaticMarkup(<Checklist items={items} />);
+  expect(markup).toContain("Open thread");
+  expect(markup).toContain("New");
+});
+
+test.each([
+  ["a done parent with unfinished work", "done", "pending", "pending"],
+  ["a pending parent with running work", "pending", "in_progress", "in_progress"],
+  ["fully done work", "done", "done", "done"],
+] as const)("General's status reflects %s beneath it", (_case, parent, child, expected) => {
+  const items = channelTaskGroupItems({
+    ...groupOptions,
+    tasks: [
+      { id: "g", title: "Goal", status: "pending", goalSequence: 3 },
+      {
+        id: "t1",
+        title: "Parent",
+        status: parent,
+        children: [{ id: "t2", title: "Child", status: child }],
+      },
+    ],
+    threads: [],
+  });
+  expect(items.at(-1)).toMatchObject({ id: "general", status: expected });
+});
+
+test("a goal task named general never collides with the General group", () => {
+  const items = channelTaskGroupItems({
+    ...groupOptions,
+    tasks: [
+      { id: "general", title: "Goal", status: "pending", goalSequence: 3 },
+      { id: "t1", title: "Loose", status: "pending" },
+    ],
+    threads: [],
+  });
+  const ids = items.map(({ id }) => id);
+  expect(new Set(ids).size).toBe(ids.length);
 });

@@ -4,7 +4,9 @@ import {
   channelUnreadAfter,
   type ChannelSubscriptionEvent,
   type ChannelState,
+  type ChannelConversationMessage,
   type ChannelMessage,
+  type ChannelThread,
 } from "./model";
 import { listChannels } from "@channels/server/functions";
 import { reducedQuery } from "@/shared/query";
@@ -15,6 +17,13 @@ import { streamChannel } from "./stream";
 /** Browser arrival is distinct from cached content and from later live updates. */
 export type ChannelQueryData = ChannelState & {
   arrival: { id: number; unreadAfter: number | null };
+};
+
+export type ChannelThreadDetail = {
+  revision: number;
+  root: ChannelConversationMessage;
+  replies: ChannelConversationMessage[];
+  thread: ChannelThread;
 };
 
 export const channelQueries = {
@@ -56,6 +65,20 @@ export const channelQueries = {
       retry: (_count, error) =>
         !(error instanceof EventStreamError && error.status < 500 && error.status !== 429),
       retryDelay: 1_000,
+    }),
+  /** A thread's root and replies, which the main transcript leaves out; refetched as it grows. */
+  thread: (channelId: string, rootSequence: number) =>
+    queryOptions({
+      queryKey: ["channels", "detail", channelId, "thread", rootSequence] as const,
+      queryFn: async ({ signal }) => {
+        const response = await fetch(
+          `/api/v1/channels/${encodeURIComponent(channelId)}/threads/${rootSequence}`,
+          { signal },
+        );
+        if (!response.ok) throw new Error("Unable to load the thread.");
+        return response.json() as Promise<ChannelThreadDetail>;
+      },
+      staleTime: 0,
     }),
   messagesBefore: (channelId: string, beforeSequence: number) =>
     queryOptions({

@@ -103,8 +103,12 @@ export function useChannel(
       console.error("Failed to load previous Channel messages:", error),
     );
 
-  const postMessage = (message: Pick<PostChannelMessageInput, "content" | "attachments">) =>
-    post({ ...message, channelId, id: generateUUID() });
+  const postMessage = (
+    message: Pick<
+      PostChannelMessageInput,
+      "content" | "attachments" | "threadRootSequence" | "alsoPostToChannel"
+    >,
+  ) => post({ ...message, channelId, id: generateUUID() });
 
   if (state === null) throw new Error("This channel has been deleted.");
   /** Where unread messages began on arrival; null means read, undefined awaits arrival. */
