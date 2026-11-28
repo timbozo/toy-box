@@ -10,7 +10,10 @@ import {
   reconcileChannelTaskTiming,
   channelSystemMessageContentSchema,
   channelRepliesSchema,
+  assertChannelGoalLinks,
+  parseChannelGoalMarker,
   CHANNEL_LEAD_PROFILE,
+  type ChannelThread,
   resolveChannelAgentId,
   type Channel,
   type ChannelCatalogEntry,
@@ -191,7 +194,8 @@ export class ChannelDatabase {
             : await readRequest(db, channelId, channel.requestSequence),
         revision: row.revision,
         ...channelRoster(await new WorkerDatabase(db).list({ type: "channel", channelId })),
-        messages: await listMessagesBefore(db, channelId, undefined, messageLimit),
+        messages: await listMessagesBefore(db, channelId, undefined, messageLimit, "transcript"),
+        threads: await listThreads(db, channelId),
         artifacts: await listArtifacts(db, channelId),
         routines: await listRoutines(db, channelId),
       };
@@ -379,7 +383,8 @@ export class ChannelDatabase {
     return listMessagesBefore(this.db, channelId, beforeSequence, limit);
   }
 
-  /** History and reactions share a revision, so clients can reject an overtaken page. */
+  /** History and reactions share a revision, so clients can reject an overtaken page. Pages hold
+   *  the main transcript; thread-only replies load with their thread. */
   async getHistory(channelId: string, beforeSequence: number) {
     return inStateTransaction(this.db, async (db) => {
       const [channel] = await db<{ revision: number }[]>`
@@ -388,9 +393,64 @@ export class ChannelDatabase {
       return channel
         ? {
             revision: channel.revision,
-            messages: await listMessagesBefore(db, channelId, beforeSequence),
+            messages: await listMessagesBefore(db, channelId, beforeSequence, 100, "transcript"),
           }
         : null;
+    });
+  }
+
+  /** A thread's root and every reply, with the revision they share and the user's position. */
+  async getThread(channelId: string, rootSequence: number) {
+    return inStateTransaction(this.db, async (db) => {
+      const [channel] = await db<{ revision: number }[]>`
+        SELECT revision FROM channels WHERE id = ${channelId}
+      `;
+      if (!channel) return null;
+      const root = await readThreadRoot(db, channelId, rootSequence);
+      if (!root) return null;
+      const rows = await db<ChannelMessageRow[]>`
+        SELECT * FROM channel_messages
+        WHERE channel_id = ${channelId} AND thread_root_sequence = ${rootSequence}
+        ORDER BY sequence
+      `;
+      const replies = await hydrateMessages(db, channelId, rows);
+      const thread = (await listThreads(db, channelId, rootSequence))[0];
+      return {
+        revision: channel.revision,
+        root,
+        replies,
+        thread: thread ?? emptyThread(rootSequence),
+      };
+    });
+  }
+
+  /** Advances the user's position in one thread, never past its newest reply, or returns null
+   *  when the root isn't a thread root in this Channel. */
+  async markThreadSeen(
+    channelId: string,
+    rootSequence: number,
+    sequence: number,
+  ): Promise<{ thread: ChannelThread; change?: ChannelChange } | null> {
+    return inStateTransaction(this.db, async (db) => {
+      if (!(await readThreadRoot(db, channelId, rootSequence))) return null;
+      const [thread = emptyThread(rootSequence)] = await listThreads(db, channelId, rootSequence);
+      const seenThrough = Math.min(thread.latestSequence, sequence);
+      if (seenThrough <= thread.seenThrough) return { thread };
+      await writeThreadRead(db, channelId, rootSequence, seenThrough);
+      return {
+        thread: { ...thread, seenThrough },
+        change: {
+          channelId,
+          events: [
+            {
+              type: "thread_read" as const,
+              rootSequence,
+              seenThrough,
+              revision: await advanceRevision(db, channelId),
+            },
+          ],
+        },
+      };
     });
   }
 
@@ -401,15 +461,38 @@ export class ChannelDatabase {
     attachments,
     request,
     replies,
-    ...message
+    threadRootSequence,
+    alsoPostToChannel,
+    ...written
   }: Omit<
     ChannelConversationMessage,
-    "sequence" | "timestamp" | "reactions" | "request" | "attachments"
+    | "sequence"
+    | "timestamp"
+    | "reactions"
+    | "request"
+    | "attachments"
+    | "isGoalRoot"
+    | "alsoPostToChannel"
   > & {
     channelId: string;
     request?: boolean;
     attachments?: string[];
+    alsoPostToChannel?: boolean;
   }) {
+    const goal = parseChannelGoalMarker(written.content);
+    if (goal.isGoalRoot && threadRootSequence !== undefined) {
+      throw new RefusalError("Only a top-level message can be a goal.");
+    }
+    if (goal.isGoalRoot && !goal.content && !attachments?.length) {
+      throw new RefusalError("Describe the goal after :goal:.");
+    }
+    const message = {
+      ...written,
+      content: goal.content,
+      ...(goal.isGoalRoot ? { isGoalRoot: true as const } : {}),
+      ...(threadRootSequence !== undefined ? { threadRootSequence } : {}),
+      ...(alsoPostToChannel ? { alsoPostToChannel: true as const } : {}),
+    };
     // A lead's Agent ID is its Channel's ID.
     if (request && !(message.sender.type === "agent" && message.sender.agentId === channelId)) {
       throw new Error("Only the channel lead can request input.");
@@ -425,6 +508,9 @@ export class ChannelDatabase {
         const replay = await recordChannelChange(db, channel, []);
         return { ...replay, message: messageFromRow(row, []), acknowledgedRequest: false };
       }
+      if (threadRootSequence !== undefined) {
+        await requireThreadRoot(db, channelId, threadRootSequence);
+      }
       const acknowledgedRequest =
         message.sender.type === "user" && channel.requestSequence !== null;
       const change = await appendMessage(db, channelId, (position) => ({
@@ -434,6 +520,10 @@ export class ChannelDatabase {
         ...(replies ? { replies } : {}),
         ...(attachments?.length ? { attachments } : {}),
       }));
+      // Replying reads the thread through the reply, as the reducer derives.
+      if (threadRootSequence !== undefined && message.sender.type === "user") {
+        await writeThreadRead(db, channelId, threadRootSequence, change.message.sequence);
+      }
       return {
         ...(await recordChannelChange(db, channel, [change])),
         message: change.message,
@@ -896,6 +986,9 @@ async function appendMessage(
     attachments: message.attachments?.length ? JSON.stringify(message.attachments) : null,
     request: message.request ? 1 : 0,
     replies: message.replies ? JSON.stringify(message.replies) : null,
+    thread_root_sequence: message.threadRootSequence ?? null,
+    goal_root: message.isGoalRoot ? 1 : 0,
+    also_post_to_channel: message.alsoPostToChannel ? 1 : 0,
   };
   await db`INSERT INTO channel_messages ${db(row)}`;
   return {
@@ -988,20 +1081,95 @@ async function readRequest(
   return message && !isChannelSystemMessage(message) ? message : null;
 }
 
+/** The newest messages before a sequence: every message, or only the main transcript's. */
 async function listMessagesBefore(
   db: Bun.SQL,
   channelId: string,
   beforeSequence?: number,
   limit = 100,
+  scope: "all" | "transcript" = "all",
 ): Promise<ChannelMessage[]> {
   const before = beforeSequence ?? Number.MAX_SAFE_INTEGER;
+  const transcript =
+    scope === "transcript"
+      ? db`AND (thread_root_sequence IS NULL OR also_post_to_channel = 1)`
+      : db``;
   const rows = await db<ChannelMessageRow[]>`
     SELECT * FROM channel_messages
-    WHERE channel_id = ${channelId} AND sequence < ${before}
+    WHERE channel_id = ${channelId} AND sequence < ${before} ${transcript}
     ORDER BY sequence DESC
     LIMIT ${limit}
   `;
   return hydrateMessages(db, channelId, rows.reverse());
+}
+
+/** Threads with replies, by root, with the user's read position in each. */
+async function listThreads(
+  db: Bun.SQL,
+  channelId: string,
+  rootSequence?: number,
+): Promise<ChannelThread[]> {
+  const root = rootSequence === undefined ? db`` : db`AND thread_root_sequence = ${rootSequence}`;
+  const rows = await db<
+    { root: number; reply_count: number; latest: number; seen_through: number | null }[]
+  >`
+    SELECT replies.thread_root_sequence AS root, COUNT(*) AS reply_count,
+      MAX(replies.sequence) AS latest, reads.seen_through
+    FROM channel_messages AS replies
+    LEFT JOIN channel_thread_reads AS reads
+      ON reads.channel_id = replies.channel_id
+      AND reads.root_sequence = replies.thread_root_sequence
+    WHERE replies.channel_id = ${channelId} AND replies.thread_root_sequence IS NOT NULL ${root}
+    GROUP BY replies.thread_root_sequence
+    ORDER BY replies.thread_root_sequence
+  `;
+  return rows.map((row) => ({
+    rootSequence: row.root,
+    replyCount: row.reply_count,
+    latestSequence: row.latest,
+    seenThrough: row.seen_through ?? row.root,
+  }));
+}
+
+function emptyThread(rootSequence: number): ChannelThread {
+  return { rootSequence, replyCount: 0, latestSequence: rootSequence, seenThrough: rootSequence };
+}
+
+/** A thread's root is a top-level user or agent message. */
+async function readThreadRoot(
+  db: Bun.SQL,
+  channelId: string,
+  sequence: number,
+): Promise<ChannelConversationMessage | null> {
+  const rows = await db<ChannelMessageRow[]>`
+    SELECT * FROM channel_messages
+    WHERE channel_id = ${channelId} AND sequence = ${sequence}
+      AND sender_type <> 'system' AND thread_root_sequence IS NULL
+  `;
+  const [root] = await hydrateMessages(db, channelId, rows);
+  return root && !isChannelSystemMessage(root) ? root : null;
+}
+
+async function requireThreadRoot(db: Bun.SQL, channelId: string, sequence: number) {
+  const root = await readThreadRoot(db, channelId, sequence);
+  if (!root) {
+    throw new RefusalError("Reply to a top-level user or agent message in this channel.");
+  }
+  return root;
+}
+
+async function writeThreadRead(
+  db: Bun.SQL,
+  channelId: string,
+  rootSequence: number,
+  seenThrough: number,
+) {
+  await db`
+    INSERT INTO channel_thread_reads (channel_id, root_sequence, seen_through)
+    VALUES (${channelId}, ${rootSequence}, ${seenThrough})
+    ON CONFLICT(channel_id, root_sequence)
+    DO UPDATE SET seen_through = MAX(seen_through, excluded.seen_through)
+  `;
 }
 
 async function hydrateMessages(
@@ -1069,6 +1237,9 @@ type ChannelMessageRow = {
   attachments: string | null;
   replies: string | null;
   timestamp: string;
+  thread_root_sequence: number | null;
+  goal_root: number;
+  also_post_to_channel: number;
 };
 
 type ChannelReactionRow = {
@@ -1215,6 +1386,9 @@ function messageFromRow(row: ChannelMessageRow, reactions: ChannelReaction[]): C
     ...common,
     sender,
     content: row.content,
+    ...(row.thread_root_sequence !== null ? { threadRootSequence: row.thread_root_sequence } : {}),
+    ...(row.goal_root ? { isGoalRoot: true as const } : {}),
+    ...(row.also_post_to_channel ? { alsoPostToChannel: true as const } : {}),
     ...(row.request ? { request: true as const } : {}),
     ...(replies ? { replies } : {}),
     ...(attachments?.length ? { attachments } : {}),
@@ -1242,6 +1416,19 @@ async function resolveTaskReferences(
     new WorkerDatabase(db).list({ type: "channel", channelId }),
     listArtifacts(db, channelId),
   ]);
+  const goalSequences = tasks.flatMap(({ goalSequence }) => goalSequence ?? []);
+  const goalRoots = new Set(
+    goalSequences.length
+      ? (
+          await db<{ sequence: number }[]>`
+            SELECT sequence FROM channel_messages
+            WHERE channel_id = ${channelId} AND goal_root = 1
+              AND sequence IN ${db(goalSequences)}
+          `
+        ).map(({ sequence }) => sequence)
+      : [],
+  );
+  assertChannelGoalLinks(tasks, (sequence) => goalRoots.has(sequence));
   const agents = workers.map(channelAgentFromWorker);
   const artifactIds = new Set(artifacts.map(({ id }) => id));
   const resolve = (tasks: readonly ChannelTaskInput[]): ChannelTask[] =>

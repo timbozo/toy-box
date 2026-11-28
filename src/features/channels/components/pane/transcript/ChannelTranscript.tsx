@@ -27,6 +27,7 @@ export function ChannelTranscript({
   messages,
   view,
   unreadAfter,
+  requestSequence,
   handleRef,
   onLoadPrevious,
 }: {
@@ -34,11 +35,20 @@ export function ChannelTranscript({
   view: TranscriptView;
   /** Arrival read position; null means read, undefined awaits the connection's initial state. */
   unreadAfter: number | null | undefined;
+  /** The Channel's pending request, or null when none pends. */
+  requestSequence: number | null;
   handleRef: RefObject<ChannelTranscriptHandle | null>;
   onLoadPrevious: (throughSequence?: number) => Promise<void>;
 }) {
   const { lead, members, bookmarks } = useChannelPane();
-  const rows = transcriptRows(messages, { lead, members, bookmarks, unreadAfter, view });
+  const rows = transcriptRows(messages, {
+    lead,
+    members,
+    bookmarks,
+    unreadAfter,
+    view,
+    requestSequence,
+  });
   const {
     scrollRef,
     containerRef,
@@ -97,7 +107,7 @@ export function ChannelTranscript({
 }
 
 /** A user's message, one agent's run, or merged system messages. */
-function TranscriptRowContent({ row }: { row: TranscriptRow }) {
+export function TranscriptRowContent({ row }: { row: TranscriptRow }) {
   switch (row.type) {
     case "user":
       return <ChannelUserMessage message={row.message} />;

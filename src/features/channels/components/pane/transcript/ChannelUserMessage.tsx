@@ -4,6 +4,7 @@ import { UserMessage } from "@/shared/messages/UserMessage";
 import { ClockTime } from "@/shared/ui/clock-time";
 import { BookmarkToggle } from "../ChannelBookmarks";
 import { ChannelReactions } from "./ChannelReactions";
+import { GoalTag, ReplyInThreadButton, ThreadLinks } from "./ThreadLinks";
 
 /** The user's message, shown as in a session, with the reactions agents gave it. */
 export function ChannelUserMessage({ message }: { message: ChannelConversationMessage }) {
@@ -15,12 +16,17 @@ export function ChannelUserMessage({ message }: { message: ChannelConversationMe
         extraActions={
           <>
             <ChannelReactions message={message} className="mr-1" />
+            <ReplyInThreadButton message={message} />
             <BookmarkToggle sequence={message.sequence} />
           </>
         }
       >
+        {message.isGoalRoot && <GoalTag className="mb-1 bg-background/20 text-current" />}
         <AgentMentionMarkdown content={message.content} onAccent />
       </UserMessage>
+      <div className="flex justify-end">
+        <ThreadLinks message={message} />
+      </div>
     </div>
   );
 }

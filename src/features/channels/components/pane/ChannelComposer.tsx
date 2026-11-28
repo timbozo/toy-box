@@ -29,7 +29,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import { cn } from "@/shared/utils";
 import { ChannelBookmarks } from "./ChannelBookmarks";
 import { useChannelPane } from "./ChannelPaneContext";
-import { useChannelTaskItems, TaskDiff } from "./channelTaskItems";
+import { useChannelTaskGroupItems, TaskDiff } from "./channelTaskItems";
 import { WorkspacePreview } from "@sessions/components/outputs/WorkspacePreview";
 
 /** Starts a message from elsewhere in the pane, continuing whatever draft exists. */
@@ -61,7 +61,7 @@ export function ChannelComposer({
   const diff = channelTasksDiff(channel?.tasks ?? []);
   const request = state?.request;
   const needsReply = channel ? channelHasPendingRequest(channel) : false;
-  const { lead, members, agents, bookmarks } = useChannelPane();
+  const { lead, members, agents, bookmarks, threads, openThread } = useChannelPane();
   const artifacts = channelArtifactsNewestFirst(state?.artifacts ?? []).map(
     ({ file, title, sharedAt }) => ({ file, label: title, time: Date.parse(sharedAt) }),
   );
@@ -93,7 +93,9 @@ export function ChannelComposer({
     },
   }));
 
-  const checklist = useChannelTaskItems({
+  const checklist = useChannelTaskGroupItems({
+    threads,
+    onOpenThread: openThread,
     tasks: channel?.tasks ?? [],
     owners: agents,
     artifacts: state?.artifacts ?? [],

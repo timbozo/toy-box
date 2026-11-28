@@ -16,6 +16,7 @@ import { cn } from "@/shared/utils";
 import { BookmarkToggle } from "../ChannelBookmarks";
 import { useChannelPane } from "../ChannelPaneContext";
 import { ChannelReactions } from "./ChannelReactions";
+import { GoalTag, ReplyInThreadButton, ThreadLinks } from "./ThreadLinks";
 import type { AgentRunEntry, ChannelRequestState } from "./transcriptRows";
 
 /** One agent's consecutive messages under a single avatar. */
@@ -71,6 +72,7 @@ function AgentMessage({
           {request && <RequestTag state={request} />}
         </div>
       )}
+      {message.isGoalRoot && <GoalTag className="mb-1" />}
       {message.content && (
         <div className="relative">
           <div
@@ -121,6 +123,7 @@ function AgentMessage({
                 <TooltipContent sideOffset={4}>Reply</TooltipContent>
               </Tooltip>
             )}
+            <ReplyInThreadButton message={message} className={onHover} />
             <CopyControl content={message.content} className={onHover} />
             <Separator orientation="vertical" className={cn("mx-0.5 h-4!", onHover)} />
             <BookmarkToggle sequence={message.sequence} />
@@ -132,6 +135,7 @@ function AgentMessage({
           <AttachmentGallery attachments={attachments} variant="filmstrip" />
         </div>
       )}
+      <ThreadLinks message={message} />
       <ChannelReactions message={message} className="mt-2" />
     </div>
   );

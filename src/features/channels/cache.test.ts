@@ -34,6 +34,7 @@ const snapshot: ChannelQueryData = {
   arrival: { id: 1, unreadAfter: 0 },
   channel: { ...channel, tasks: [], latestSequence: message.sequence },
   request: null,
+  threads: [],
   bookmarks: [],
   revision: 101,
   lead: channelLead(channel.id),
@@ -205,6 +206,38 @@ test("a failed post removes its local copy, unless the echo already replaced it"
   expect(client.getQueryData<ChannelQueryData>(detailKey)?.messages.map(({ id }) => id)).toEqual([
     "latest",
     "sent",
+  ]);
+});
+
+test("a thread-only reply stays out of the transcript, while goals and cross-posts join it", async () => {
+  const client = createQueryClient();
+  client.setQueryData(detailKey, snapshot);
+  const post = channelMutations.post();
+  const context = { client, meta: undefined };
+  const base = { channelId: channel.id, content: ":goal: Ship threads" };
+
+  expect(await post.onMutate!({ ...base, id: "reply", threadRootSequence: 1 }, context)).toBe(
+    undefined,
+  );
+  expect(client.getQueryData(detailKey)).toEqual(snapshot);
+
+  const goal = await post.onMutate!({ ...base, id: "goal" }, context);
+  expect(goal).toMatchObject({ content: "Ship threads", isGoalRoot: true });
+
+  const crossPost = await post.onMutate!(
+    { ...base, id: "cross", threadRootSequence: 1, alsoPostToChannel: true },
+    context,
+  );
+  expect(crossPost).toMatchObject({
+    content: ":goal: Ship threads",
+    threadRootSequence: 1,
+    alsoPostToChannel: true,
+  });
+  expect(crossPost?.isGoalRoot).toBeUndefined();
+  expect(client.getQueryData<ChannelQueryData>(detailKey)?.messages.map(({ id }) => id)).toEqual([
+    "latest",
+    "goal",
+    "cross",
   ]);
 });
 

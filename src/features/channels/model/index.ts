@@ -422,6 +422,12 @@ type ChannelMessageBase = {
 export type ChannelConversationMessage = ChannelMessageBase & {
   sender: ChannelActor;
   content: string;
+  /** A reply names its thread's root, a top-level message; replies never start threads. */
+  threadRootSequence?: number;
+  /** A top-level message posted with the `:goal:` marker, which its content no longer contains. */
+  isGoalRoot?: true;
+  /** A reply that also appears in the main transcript, as the same message. */
+  alsoPostToChannel?: true;
   /** The lead asks for the user's response; a later user message acknowledges it. */
   request?: true;
   /** Suggested answers to a request, which the user can post with one click. */
@@ -437,12 +443,48 @@ export type ChannelSystemMessage = ChannelMessageBase & {
   reactions?: never;
   request?: never;
   replies?: never;
+  threadRootSequence?: never;
+  isGoalRoot?: never;
+  alsoPostToChannel?: never;
 };
 
 export type ChannelMessage = ChannelConversationMessage | ChannelSystemMessage;
 
 export function isChannelSystemMessage(message: ChannelMessage): message is ChannelSystemMessage {
   return message.sender.type === "system";
+}
+
+/** Whether a message appears in the main transcript: every top-level message and the replies
+ *  sent to it as well. A thread's other replies appear only in their thread. */
+export function isChannelTranscriptMessage(message: ChannelMessage): boolean {
+  return (
+    isChannelSystemMessage(message) ||
+    message.threadRootSequence === undefined ||
+    message.alsoPostToChannel === true
+  );
+}
+
+/** One thread's replies and the user's read position in them, which is independent of the
+ *  Channel's: reading the transcript never reads a thread. Roots without replies have none. */
+export type ChannelThread = {
+  rootSequence: number;
+  replyCount: number;
+  latestSequence: number;
+  /** The newest reply the user has read, or the root's sequence before any. */
+  seenThrough: number;
+};
+
+export function channelThreadHasUnread(thread: ChannelThread): boolean {
+  return thread.latestSequence > thread.seenThrough;
+}
+
+const GOAL_MARKER = /^\s*:goal:\s*/i;
+
+/** A leading `:goal:` marks a top-level message as a goal root; the marker itself isn't kept. */
+export function parseChannelGoalMarker(content: string): { content: string; isGoalRoot: boolean } {
+  return GOAL_MARKER.test(content)
+    ? { content: content.replace(GOAL_MARKER, ""), isGoalRoot: true }
+    : { content, isGoalRoot: false };
 }
 
 /** Canonical reduced state of one Channel; a snapshot is this value at one revision. */
@@ -452,7 +494,10 @@ export type ChannelState = {
   channel: Channel;
   lead: ChannelLead;
   members: ChannelMember[];
+  /** Main-transcript messages, oldest first; thread-only replies load with their thread. */
   messages: ChannelMessage[];
+  /** Every thread with replies, by root sequence, including roots outside the message window. */
+  threads: ChannelThread[];
   /** The newest unanswered public request, including one outside the message window. */
   request: ChannelConversationMessage | null;
   /** The sequences of messages the user bookmarked, in order; private to the user. */
@@ -477,6 +522,7 @@ export type ChannelEvent = (
   | { type: "tasks"; tasks: ChannelTask[] }
   | { type: "model"; model: ModelConfiguration; updatedAt: string }
   | { type: "read"; seenThrough: number }
+  | { type: "thread_read"; rootSequence: number; seenThrough: number }
   | { type: "bookmarks"; bookmarks: number[] }
   | { type: "member"; member: ChannelMember }
   | { type: "status"; agentId: string; status?: ChannelAgent["status"] }
@@ -547,17 +593,48 @@ export const updateChannelInputSchema = channelChangesSchema
     message: "Update the name, purpose, directory, preview, avatar, or any combination of them.",
   });
 
+/** How a message joins a thread, shared by the browser, native clients, and agent tools. */
+export const channelThreadReplyShape = {
+  threadRootSequence: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Reply in the thread of this top-level message's sequence. Omit to post to the main channel, where a leading :goal: marks the message as a goal root.",
+    ),
+  alsoPostToChannel: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also show this reply in the main channel, linked to its thread, when it needs wider attention. Requires threadRootSequence.",
+    ),
+};
+
+export const alsoPostRequiresThread = [
+  ({
+    threadRootSequence,
+    alsoPostToChannel,
+  }: {
+    threadRootSequence?: number;
+    alsoPostToChannel?: boolean;
+  }) => !alsoPostToChannel || threadRootSequence !== undefined,
+  { message: "Only a thread reply can also be sent to the channel." },
+] as const;
+
 export const postChannelMessageInputSchema = z
   .object({
     id: durableIdSchema,
     channelId: durableIdSchema,
     content: channelMessageTextSchema,
     attachments: attachmentsSchema.optional(),
+    ...channelThreadReplyShape,
   })
   .strict()
   .refine(({ content, attachments }) => content.length > 0 || (attachments?.length ?? 0) > 0, {
     message: "A message or attachment is required",
-  });
+  })
+  .refine(...alsoPostRequiresThread);
 
 export const markChannelReadInputSchema = z
   .object({
@@ -565,6 +642,14 @@ export const markChannelReadInputSchema = z
     sequence: z.number().int().nonnegative(),
   })
   .strict();
+
+export const markChannelThreadReadInputSchema = markChannelReadInputSchema.extend({
+  rootSequence: z.number().int().positive(),
+});
+
+export const channelThreadIdentitySchema = channelIdentitySchema.extend({
+  rootSequence: z.number().int().positive(),
+});
 
 export const bookmarkChannelMessageInputSchema = z
   .object({

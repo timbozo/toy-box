@@ -135,4 +135,30 @@ export default [
     )
     WHERE id IN (SELECT id FROM owners);
   `,
+  // Threads: a reply names its top-level root, and the user reads each thread separately.
+  `
+    ALTER TABLE channel_messages ADD COLUMN thread_root_sequence INTEGER
+      CHECK (thread_root_sequence IS NULL OR (
+        sender_type <> 'system' AND typeof(thread_root_sequence) = 'integer'
+        AND thread_root_sequence < sequence
+      ));
+    ALTER TABLE channel_messages ADD COLUMN goal_root INTEGER NOT NULL DEFAULT 0
+      CHECK (goal_root IN (0, 1) AND (goal_root = 0 OR thread_root_sequence IS NULL));
+    ALTER TABLE channel_messages ADD COLUMN also_post_to_channel INTEGER NOT NULL DEFAULT 0
+      CHECK (also_post_to_channel IN (0, 1)
+        AND (also_post_to_channel = 0 OR thread_root_sequence IS NOT NULL));
+
+    CREATE INDEX IF NOT EXISTS idx_channel_messages_thread
+      ON channel_messages(channel_id, thread_root_sequence, sequence)
+      WHERE thread_root_sequence IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS channel_thread_reads (
+      channel_id    TEXT NOT NULL,
+      root_sequence INTEGER NOT NULL,
+      seen_through  INTEGER NOT NULL CHECK (typeof(seen_through) = 'integer'),
+      PRIMARY KEY(channel_id, root_sequence),
+      FOREIGN KEY(channel_id, root_sequence)
+        REFERENCES channel_messages(channel_id, sequence) ON DELETE CASCADE
+    );
+  `,
 ];

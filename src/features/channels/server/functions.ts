@@ -7,6 +7,8 @@ import {
   createChannelInputSchema,
   editChannelInputSchema,
   markChannelReadInputSchema,
+  markChannelThreadReadInputSchema,
+  channelThreadIdentitySchema,
   postChannelMessageInputSchema,
   removeChannelMemberInputSchema,
   channelArtifactIdentitySchema,
@@ -65,6 +67,16 @@ export const markChannelRead = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<void> => {
     await channels.markChannelRead(data.channelId, data.sequence);
   });
+
+export const markChannelThreadRead = createServerFn({ method: "POST" })
+  .validator(markChannelThreadReadInputSchema)
+  .handler(async ({ data }): Promise<void> => {
+    await channels.markChannelThreadRead(data.channelId, data.rootSequence, data.sequence);
+  });
+
+export const getChannelThread = createServerFn({ method: "GET" })
+  .validator(channelThreadIdentitySchema)
+  .handler(({ data }) => channels.getChannelThread(data.channelId, data.rootSequence));
 
 export const bookmarkChannelMessage = createServerFn({ method: "POST" })
   .validator(bookmarkChannelMessageInputSchema)

@@ -39,6 +39,7 @@ function snapshot(): ChannelState {
     artifacts: [],
     routines: [],
     request: null,
+    threads: [],
     bookmarks: [],
   };
 }

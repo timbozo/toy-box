@@ -103,6 +103,14 @@ Channel        name, avatar, purpose, directory, lead model, tasks, preview, use
   senders retain only their stable Worker ID, so deleting a member preserves prior content while the
   UI presents a deleted identity. A lead's message may be a request, which may also carry `replies`,
   two to four labels of up to 80 characters that become one-tap answers.
+- A thread is a top-level user or agent message, its root, and the replies that name it with
+  `threadRootSequence`. Replies stay in the Channel's one sequence and never start threads of their
+  own. A reply with `alsoPostToChannel` also appears in the main transcript as the same message;
+  other replies appear only in their thread. A top-level message posted with a leading `:goal:` is a
+  goal root, `isGoalRoot`, and the marker is not kept in its content. `ChannelThread` summarizes one
+  thread with replies: its reply count, newest reply, and the user's own read position in it, which
+  starts at the root and is independent of `seenThrough`, so reading the transcript never reads a
+  thread. The user's own reply reads its thread through itself.
 - `ChannelReaction` is one agent's durable acknowledgement or sentiment on a user or agent message.
   It does not wake anyone or advance message sequence.
 - A bookmark is the user's private mark on a user or agent message, stored only as its sequence.
@@ -158,6 +166,10 @@ attention writes check the Channel's intrinsic lead ID within their transaction.
   deletes a subtree; moving appends it intact at the root or under a parent outside that subtree.
   Each sibling list holds at most 50 tasks, and moves regroup a growing list into milestones without
   copying child counts into a parent's direct diff.
+- One task tree serves every goal. A top-level task may set `goalSequence` to a goal root's
+  sequence, making it that goal's group and its subtasks the goal's tasks; each goal has at most one
+  group, and only top-level tasks link. Top-level tasks without a goal form the General group, so
+  existing tasks keep their place. Completion still compares the whole tree.
 - When a lead's batch takes the list from incomplete to complete, meaning it has tasks and every task
   and subtask is done, the same transaction appends `tasks_completed`. Completion compares the
   committed tree before and after the entire batch, never intermediate edits. Editing an already
@@ -401,6 +413,19 @@ message without delivering again, and an ID from another Channel returns 422.
 returns `{ seenThrough }`. Reading acknowledges completion but never answers a request. `PUT` and
 `DELETE …/bookmarks/:sequence` bookmark and unbookmark a message idempotently and return 204;
 bookmarking a system or missing message returns 422.
+
+### Threads
+
+`POST …/messages` also accepts `threadRootSequence` and `alsoPostToChannel`; replying to a reply, a
+system message, or a missing message returns 422, and `alsoPostToChannel` without a root returns 400. The snapshot's `messages` and history pages hold only the main transcript, top-level messages
+and cross-posted replies, and its `threads` lists every thread with replies, even roots outside the
+window. A reply's `message` event updates its thread and joins `messages` only when cross-posted.
+
+`GET …/threads/:rootSequence` returns `{ revision, root, replies, thread }`, the root and every reply
+read in one transaction, or 404 when the sequence isn't a top-level user or agent message.
+`POST …/threads/:rootSequence/read` accepts `{ sequence }`, advances the user's position in that
+thread monotonically and never past its newest reply, publishes a `thread_read` event, and returns
+`{ seenThrough }`.
 
 ### Management
 

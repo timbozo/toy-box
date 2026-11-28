@@ -213,6 +213,25 @@ export async function markChannelRead(
   return change?.channel ?? database.getChannel(channelId);
 }
 
+/** Reads one thread through a sequence; reading the Channel never does. */
+export async function markChannelThreadRead(
+  channelId: string,
+  rootSequence: number,
+  sequence: number,
+) {
+  const read = await new ChannelDatabase(await getStateDatabase()).markThreadSeen(
+    channelId,
+    rootSequence,
+    sequence,
+  );
+  if (read?.change) publishChannelChange(read.change);
+  return read?.thread ?? null;
+}
+
+export async function getChannelThread(channelId: string, rootSequence: number) {
+  return new ChannelDatabase(await getStateDatabase()).getThread(channelId, rootSequence);
+}
+
 export async function bookmarkChannelMessage(input: BookmarkChannelMessageInput): Promise<void> {
   const change = await new ChannelDatabase(await getStateDatabase()).bookmarkMessage(input);
   if (change) publishChannelChange(change);

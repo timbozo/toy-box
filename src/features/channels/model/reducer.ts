@@ -1,7 +1,14 @@
-import { compareChannelAgents, isChannelSystemMessage, unlinkChannelTasks } from ".";
+import {
+  compareChannelAgents,
+  isChannelSystemMessage,
+  isChannelTranscriptMessage,
+  unlinkChannelTasks,
+} from ".";
 import type {
   Channel,
   ChannelArtifact,
+  ChannelConversationMessage,
+  ChannelThread,
   ChannelEvent,
   ChannelMessage,
   ChannelSubscriptionEvent,
@@ -23,12 +30,24 @@ export function reduceChannelState(
   };
   if (event.type === "bookmarks") {
     state.bookmarks = event.bookmarks;
+  } else if (event.type === "thread_read") {
+    state.threads = state.threads.map((thread) =>
+      thread.rootSequence === event.rootSequence
+        ? { ...thread, seenThrough: event.seenThrough }
+        : thread,
+    );
   } else if (event.type === "reaction") {
     state.messages = state.messages.map((message) => reduceChannelReaction(message, event));
     if (state.request) state.request = reduceChannelReaction(state.request, event);
   } else if (event.type === "message") {
     const { message } = event;
-    state.messages = upsertMessage(state.messages, keepSentImages(state.messages, message));
+    const threadRootSequence = message.threadRootSequence;
+    if (!isChannelSystemMessage(message) && threadRootSequence !== undefined) {
+      state.threads = reduceChannelThreads(state.threads, { ...message, threadRootSequence });
+    }
+    if (isChannelTranscriptMessage(message)) {
+      state.messages = upsertMessage(state.messages, keepSentImages(state.messages, message));
+    }
     const content = isChannelSystemMessage(message) ? message.content : undefined;
     switch (content?.type) {
       case "artifact_shared":
@@ -157,6 +176,34 @@ function reduceChannelRoster<Roster extends Pick<ChannelState, "lead" | "members
     return { ...roster, members: roster.members.filter(({ id }) => id !== content.member.id) };
   }
   return roster;
+}
+
+/** A new reply counts toward its thread, and the user's own reply reads the thread through it,
+ *  as a user message reads the Channel. */
+function reduceChannelThreads(
+  threads: readonly ChannelThread[],
+  reply: ChannelConversationMessage & { threadRootSequence: number },
+): ChannelThread[] {
+  const rootSequence = reply.threadRootSequence;
+  const current = threads.find((thread) => thread.rootSequence === rootSequence) ?? {
+    rootSequence,
+    replyCount: 0,
+    latestSequence: rootSequence,
+    seenThrough: rootSequence,
+  };
+  if (reply.sequence <= current.latestSequence && current.replyCount > 0) return [...threads];
+  const thread = {
+    rootSequence,
+    replyCount: current.replyCount + 1,
+    latestSequence: reply.sequence,
+    seenThrough:
+      reply.sender.type === "user"
+        ? Math.max(current.seenThrough, reply.sequence)
+        : current.seenThrough,
+  };
+  return [...threads.filter((other) => other.rootSequence !== rootSequence), thread].sort(
+    (left, right) => left.rootSequence - right.rootSequence,
+  );
 }
 
 /** Updates a loaded message or the separately retained pending request with the same reaction. */

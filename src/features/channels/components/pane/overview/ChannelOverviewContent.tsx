@@ -41,7 +41,7 @@ import { nextCronOccurrence } from "@/shared/cron";
 import { useMinuteClock } from "@/shared/hooks/useMinuteClock";
 import { cn } from "@/shared/utils";
 import { useChannelPane } from "../ChannelPaneContext";
-import { channelTaskItems, channelTasksStarted, TaskDiff } from "../channelTaskItems";
+import { channelTaskGroupItems, channelTasksStarted, TaskDiff } from "../channelTaskItems";
 import { WorkspacePreview } from "@sessions/components/outputs/WorkspacePreview";
 
 /** What the overview shows: the Channel's context, team members, tasks, artifacts, and routines. */
@@ -55,6 +55,7 @@ export function ChannelOverviewContent({
   onAddAgent,
   onBrowseDirectory,
   onPreviewOpen,
+  onThreadOpen,
 }: {
   channel: Channel;
   artifacts: ChannelArtifact[];
@@ -65,8 +66,9 @@ export function ChannelOverviewContent({
   onAddAgent: () => void;
   onBrowseDirectory: () => void;
   onPreviewOpen: () => void;
+  onThreadOpen: () => void;
 }) {
-  const { lead, members, agents, presence } = useChannelPane();
+  const { lead, members, agents, presence, threads, openThread } = useChannelPane();
   // Removing an artifact unshares it from the channel; the file stays.
   const { mutate: removeArtifact } = useMutation(channelMutations.removeArtifact(channel.id));
   const [inProgressOnly, setInProgressOnly] = useState(false);
@@ -82,8 +84,18 @@ export function ChannelOverviewContent({
     channelTasksStarted(channel.tasks) ||
       Object.values(presence).some((agent) => agent.state === "waiting" && agent.wakeAt),
   );
-  const taskItems = channelTaskItems(
-    { tasks: channel.tasks, owners: agents, artifacts, onArtifactOpen },
+  const taskItems = channelTaskGroupItems(
+    {
+      tasks: channel.tasks,
+      owners: agents,
+      artifacts,
+      onArtifactOpen,
+      threads,
+      onOpenThread: (rootSequence) => {
+        onThreadOpen();
+        openThread(rootSequence);
+      },
+    },
     now,
   );
 

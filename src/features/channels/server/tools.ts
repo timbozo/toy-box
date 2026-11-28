@@ -9,6 +9,8 @@ import {
   channelPathSchema,
   channelRepliesSchema,
   channelReactionKindSchema,
+  channelThreadReplyShape,
+  alsoPostRequiresThread,
   createChannelMemberInputSchema,
   createChannelInputSchema,
   editChannelTasksInputSchema,
@@ -100,10 +102,13 @@ const createCurrentChannelMembersTool = defineTool("create_channel_members", {
 const postChannelMessageTool = defineTool("post_channel_message", {
   description:
     "Posts a user-attributed Markdown message with optional image or video paths to a channel. Relative paths use your working directory. Name-derived @mentions wake the addressed agents. A message without mentions wakes the lead. Read the channel for exact mentions.",
-  parameters: channelIdentitySchema.extend({
-    content: conciseChannelMessageSchema,
-    attachments: z.array(channelPathSchema).optional(),
-  }),
+  parameters: channelIdentitySchema
+    .extend({
+      content: conciseChannelMessageSchema,
+      attachments: z.array(channelPathSchema).optional(),
+      ...channelThreadReplyShape,
+    })
+    .refine(...alsoPostRequiresThread),
   handler: async ({ attachments, ...input }, { directory }) => {
     const { postChannelMessage } = await import("@channels/server");
     const message = await postChannelMessage(
@@ -171,12 +176,14 @@ const readChannelForAgentTool = defineTool("read_channel", {
   },
 });
 
-const sendChannelMessageParameters = z.object({
+const sendChannelMessageFields = z.object({
   content: conciseChannelMessageSchema,
   attachments: z.array(channelPathSchema).optional(),
+  ...channelThreadReplyShape,
 });
+const sendChannelMessageParameters = sendChannelMessageFields.refine(...alsoPostRequiresThread);
 
-const sendLeadMessageParameters = sendChannelMessageParameters
+const sendLeadMessageParameters = sendChannelMessageFields
   .extend({
     request: z
       .boolean()
@@ -192,11 +199,12 @@ const sendLeadMessageParameters = sendChannelMessageParameters
   })
   .refine(({ request, replies }) => !replies || request, {
     message: "Suggested replies belong to a request.",
-  });
+  })
+  .refine(...alsoPostRequiresThread);
 
 const sendChannelMessageTool = defineTool("send_channel_message", {
   description:
-    "Publishes a Markdown channel message without ending the turn. Pass screenshot, image, and video paths in attachments, including a generated image's saved file path. Name-derived @mentions wake the addressed agents. @everyone wakes the lead and all members. Without mentions, member messages wake the lead and lead messages wake nobody.",
+    "Publishes a Markdown channel message without ending the turn, in the main channel or as a reply in a message's thread. Pass screenshot, image, and video paths in attachments, including a generated image's saved file path. Name-derived @mentions wake the addressed agents. @everyone wakes the lead and all members. Without mentions, member messages wake the lead and lead messages wake nobody.",
   parameters: sendChannelMessageParameters,
   handler: async (
     { attachments, ...input }: z.output<typeof sendLeadMessageParameters>,

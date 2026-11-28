@@ -147,6 +147,7 @@ export function ChannelOverview({
       }}
       onBrowseDirectory={browseDirectory}
       onPreviewOpen={closeSheet}
+      onThreadOpen={closeSheet}
     />
   );
 
@@ -190,7 +191,7 @@ export function ChannelOverview({
               style={{ width: OVERVIEW_WIDTH }}
               exit={{ opacity: 0, width: 0 }}
               transition={{ duration: 0.2, ease: "easeInOut" }}
-              className="col-start-2 row-span-2 row-start-1 min-h-0 overflow-hidden"
+              className="col-start-3 row-span-2 row-start-1 min-h-0 overflow-hidden"
             >
               <div
                 className="flex h-full flex-col border-l bg-background"
